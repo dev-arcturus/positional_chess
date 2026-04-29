@@ -108,9 +108,10 @@ export default function Board() {
   // Click-to-select with legal-move indicators (also set during drag).
   const [selectedSquare, setSelectedSquare] = useState(null);
 
-  // Heatmap toggle + data. Mobility is always-on whenever a piece is
-  // selected — it's most useful as part of "what does this piece do?".
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  // Heatmap is default-on: the whole point of this app is showing how much
+  // each piece is worth in the current position, and how that worth shifts
+  // as moves are made. Mobility is always-on whenever a piece is selected.
+  const [showHeatmap, setShowHeatmap] = useState(true);
   const [heatmapPieces, setHeatmapPieces] = useState(null);
   const [heatmapMobility, setHeatmapMobility] = useState(null);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
@@ -412,6 +413,65 @@ export default function Board() {
     return styles;
   }, [selectedSquare, fen, showHeatmap, heatmapPieces, heatmapMobility]);
 
+  // Square-to-pixel mapping helper, accounting for board flip.
+  function squarePxPosition(square) {
+    const BOARD_PX = 520;
+    const SQ = BOARD_PX / 8;
+    const file = square.charCodeAt(0) - 'a'.charCodeAt(0);
+    const rank = parseInt(square[1], 10) - 1;
+    let col = file;
+    let row = 7 - rank;
+    if (orientation === 'black') {
+      col = 7 - col;
+      row = 7 - row;
+    }
+    return { left: col * SQ, top: row * SQ, size: SQ };
+  }
+
+  // Format a centipawn-pawns delta as a signed label like "+1.3" or "-0.5".
+  function fmtDeltaPawns(v) {
+    if (Math.abs(v) < 0.05) return '0.0';
+    return `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
+  }
+  function colorForDelta(v) {
+    if (v >= 0.05) return '#4ade80';
+    if (v <= -0.05) return '#f87171';
+    return '#d4d4d8';
+  }
+
+  // Numeric pawn-value badges per piece. The CORE visualization of the app:
+  // each piece's contextual worth — how much it contributes to the current
+  // position, beyond its base material value. Watch these numbers change as
+  // moves are made.
+  const valueLabels = useMemo(() => {
+    if (!showHeatmap || !heatmapPieces) return [];
+    return heatmapPieces.pieces
+      .filter(p => p.type !== 'k') // king's worth is implicitly infinite
+      .map(p => ({
+        square: p.square,
+        ...squarePxPosition(p.square),
+        color: colorForDelta(p.delta_pawns),
+        label: fmtDeltaPawns(p.delta_pawns),
+      }));
+    // squarePxPosition / fmt helpers depend on orientation; useMemo deps cover it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showHeatmap, heatmapPieces, orientation]);
+
+  // Numeric labels on legal-move targets when a piece is selected. Each label
+  // says "if you move HERE, the position swings by this many pawns". Direct
+  // visualization of "moving the piece changes its worth and the position".
+  const mobilityLabels = useMemo(() => {
+    if (!selectedSquare || !heatmapMobility) return [];
+    if (heatmapMobility.source_square !== selectedSquare) return [];
+    return heatmapMobility.moves.map(m => ({
+      square: m.square,
+      ...squarePxPosition(m.square),
+      color: colorForDelta(m.delta_pawns),
+      label: fmtDeltaPawns(m.delta_pawns),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSquare, heatmapMobility, orientation]);
+
   // Quality to color
   const getQualityColor = (quality) => {
     switch (quality) {
@@ -523,7 +583,7 @@ export default function Board() {
 
           <button
             onClick={() => setShowHeatmap(v => !v)}
-            title="Color each piece by how much it contributes to the position"
+            title="Show each piece's contextual worth in pawns. Move pieces and watch the values change."
             style={{
               padding: '8px 12px',
               borderRadius: '8px',
@@ -590,8 +650,9 @@ export default function Board() {
           <EvalBar evalCp={evalCp} loading={topMovesLoading} />
         </div>
 
-        {/* Board */}
+        {/* Board (with pawn-value overlay) */}
         <div style={{
+          position: 'relative',
           width: '520px',
           height: '520px',
           borderRadius: '8px',
@@ -612,6 +673,93 @@ export default function Board() {
             arePiecesDraggable={true}
             boardWidth={520}
           />
+
+          {/* Pawn-value badges (bottom-right of each piece). The numbers
+              are each piece's contextual worth — what the engine thinks
+              you'd lose if the piece were removed. Move the piece to a
+              better square and watch the number climb. */}
+          {showHeatmap && valueLabels.length > 0 && (
+            <div style={{
+              position: 'absolute',
+              top: 0, left: 0, width: '100%', height: '100%',
+              pointerEvents: 'none', zIndex: 2,
+            }}>
+              {valueLabels.map(v => (
+                <div key={`val-${v.square}`} style={{
+                  position: 'absolute',
+                  left: `${v.left}px`, top: `${v.top}px`,
+                  width: `${v.size}px`, height: `${v.size}px`,
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  justifyContent: 'flex-end',
+                  padding: '0 4px 2px 0',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  fontFamily: 'monospace',
+                  color: v.color,
+                  textShadow: '0 0 3px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.9)',
+                  letterSpacing: '-0.02em',
+                }}>
+                  {v.label}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Mobility badges (top-left of each legal-move target while a
+              piece is selected). The numbers say "if you move THIS piece
+              HERE, the position swings by this many pawns" — direct
+              visualization of how moving a piece changes its worth. */}
+          {mobilityLabels.length > 0 && (
+            <div style={{
+              position: 'absolute',
+              top: 0, left: 0, width: '100%', height: '100%',
+              pointerEvents: 'none', zIndex: 2,
+            }}>
+              {mobilityLabels.map(v => (
+                <div key={`mob-${v.square}`} style={{
+                  position: 'absolute',
+                  left: `${v.left}px`, top: `${v.top}px`,
+                  width: `${v.size}px`, height: `${v.size}px`,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'flex-start',
+                  padding: '2px 0 0 4px',
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  fontFamily: 'monospace',
+                  color: v.color,
+                  textShadow: '0 0 3px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.9)',
+                  letterSpacing: '-0.02em',
+                }}>
+                  {v.label}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Subtle "computing values" indicator while the engine works on
+              the heatmap. Sits in the top-left of the board, doesn't block
+              anything. */}
+          {showHeatmap && heatmapLoading && !heatmapPieces && (
+            <div style={{
+              position: 'absolute',
+              top: '6px',
+              left: '8px',
+              fontSize: '10px',
+              fontWeight: 600,
+              color: 'rgba(255, 255, 255, 0.85)',
+              backgroundColor: 'rgba(0, 0, 0, 0.55)',
+              padding: '3px 8px',
+              borderRadius: '999px',
+              letterSpacing: '0.02em',
+              textTransform: 'uppercase',
+              pointerEvents: 'none',
+              zIndex: 3,
+            }}>
+              Computing values…
+            </div>
+          )}
         </div>
 
         {/* Analysis Panel */}
