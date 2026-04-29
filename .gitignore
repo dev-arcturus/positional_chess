@@ -1,0 +1,97 @@
+# =====================================================================
+# Root .gitignore — applies to the whole repository (client + server).
+# Subdirectories may have their own .gitignore for tool-specific rules.
+# =====================================================================
+
+# ---- Dependencies (any depth) ----
+node_modules/
+jspm_packages/
+bower_components/
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
+
+# ---- Build outputs ----
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+.turbo/
+.cache/
+.parcel-cache/
+
+# ---- Logs ----
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ---- Runtime / process files ----
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ---- Coverage / test artifacts ----
+coverage/
+.nyc_output/
+*.lcov
+.jest/
+
+# ---- Environment & secrets ----
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+*.pem
+*.key
+*.crt
+
+# ---- Editor / IDE ----
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+
+# ---- OS noise ----
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ---- TypeScript ----
+*.tsbuildinfo
+
+# ---- Optional: lockfiles for the OTHER package manager ----
+# This project uses npm. If you switch to yarn or pnpm, flip these.
+# yarn.lock
+# pnpm-lock.yaml
+
+# ---- Stockfish / engine artifacts you might generate locally ----
+*.nnue.tmp
+engine.log
