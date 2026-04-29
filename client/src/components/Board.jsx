@@ -3,7 +3,7 @@ import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import {
   RefreshCw, RotateCcw, Lightbulb, X, ChevronLeft, ChevronRight,
-  BarChart3, Compass,
+  Flame, Shuffle,
 } from 'lucide-react';
 import EvalBar from './EvalBar';
 import {
@@ -24,6 +24,59 @@ function cpToTint(cp, alpha = 0.5) {
   }
   const intensity = -v / 500;
   return `rgba(248, 113, 113, ${(alpha * intensity).toFixed(3)})`;
+}
+
+// Curated "plausible" positions — openings just out of theory, sharp
+// middlegames, and clean endgames. All are legal positions that
+// realistically occur in real games. Used by the Random button.
+const RANDOM_POSITIONS = [
+  // — Openings (just out of theory) —
+  // Italian, Giuoco Pianissimo
+  'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 4 4',
+  // Sicilian Najdorf
+  'rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6',
+  // Queen's Gambit Declined, Orthodox
+  'rnbqk2r/ppp1bppp/4pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 0 5',
+  // French Defense, Tarrasch
+  'rnbqkb1r/pp3ppp/4pn2/2pp4/3P4/2N1PN2/PPP2PPP/R1BQKB1R w KQkq - 0 5',
+  // King's Indian Defense
+  'rnbqk2r/ppp1ppbp/3p1np1/8/2PPP3/2N2N2/PP3PPP/R1BQKB1R b KQkq - 1 5',
+  // Caro-Kann, Panov-Botvinnik
+  'rnbqkbnr/pp2pppp/2p5/3p4/2PPP3/8/PP3PPP/RNBQKBNR b KQkq - 0 3',
+  // Sveshnikov Sicilian
+  'r1bqkb1r/5ppp/p1np1n2/1p2p3/4P3/N1N5/PPP2PPP/R1BQKB1R w KQkq - 0 8',
+  // London System
+  'rnbqkb1r/ppp1pppp/5n2/3p4/3P1B2/5N2/PPP1PPPP/RN1QKB1R b KQkq - 2 3',
+  // English Opening
+  'rnbqkb1r/pppp1ppp/4pn2/8/2P5/2N2N2/PP1PPPPP/R1BQKB1R b KQkq - 3 3',
+  // King's Gambit Accepted
+  'rnbqkbnr/pppp1ppp/8/8/4Pp2/8/PPPP2PP/RNBQKBNR w KQkq - 0 3',
+  // — Sharp middlegames —
+  // Italian-style attack with c3-d4 push
+  'r1bqk2r/pp1pbppp/2n2n2/2p5/3PP3/2P2N2/PP3PPP/RNBQKB1R w KQkq - 1 7',
+  // King's Indian middlegame, both sides castled
+  'r1bq1rk1/ppp1npbp/2np2p1/4p3/2PPP3/2N1BN2/PP1QBPPP/R3K2R w KQ - 1 8',
+  // Sicilian Dragon middlegame
+  'r1bq1rk1/pp2ppbp/2np1np1/8/3NP3/2N1B3/PPPQBPPP/R3K2R w KQ - 4 9',
+  // Tactical position with queens still on
+  'r2qkb1r/1p1n1ppp/p2p1n2/4p3/4P3/1NN5/PPP1BPPP/R1BQ1RK1 w kq - 0 9',
+  // Late middlegame, queens off, active rooks
+  '2r3k1/p4p1p/1p1q2p1/3p4/3P4/1B3Q2/P4PPP/2R3K1 w - - 0 24',
+  // — Endgames —
+  // Rook + pawn endgame (Lucena-ish setup)
+  '4k3/p4p2/1p2p3/2p5/8/2P5/PP3PP1/3R2K1 w - - 0 1',
+  // Knight vs bishop endgame
+  '8/4kpp1/8/3n4/2B5/8/4KPP1/8 w - - 0 1',
+  // King + pawn endgame, opposition
+  '8/8/8/3k4/3P4/3K4/8/8 w - - 0 1',
+  // Minor-piece middlegame, balanced
+  'r1b2rk1/ppp2ppp/2n2n2/3pp3/8/2NPPN2/PPP2PPP/R1B2RK1 w - - 0 9',
+  // Queen + rook endgame
+  '6k1/5ppp/8/8/8/2Q5/5PPP/4R1K1 w - - 0 1',
+];
+
+function pickRandomPosition() {
+  return RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)];
 }
 
 export default function Board() {
@@ -52,12 +105,12 @@ export default function Board() {
   const [hintMove, setHintMove] = useState(null);
   const [hintLoading, setHintLoading] = useState(false);
 
-  // Click-to-select with legal-move indicators
+  // Click-to-select with legal-move indicators (also set during drag).
   const [selectedSquare, setSelectedSquare] = useState(null);
 
-  // Heatmap toggles + data
-  const [showPieceValues, setShowPieceValues] = useState(false);
-  const [showMobility, setShowMobility] = useState(false);
+  // Heatmap toggle + data. Mobility is always-on whenever a piece is
+  // selected — it's most useful as part of "what does this piece do?".
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const [heatmapPieces, setHeatmapPieces] = useState(null);
   const [heatmapMobility, setHeatmapMobility] = useState(null);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
@@ -122,9 +175,9 @@ export default function Board() {
     setHeatmapMobility(null);
   }, [fen, fetchTopMoves]);
 
-  // Piece-values heatmap fetcher (refires on toggle / fen change)
+  // Piece-values heatmap fetcher (refires on toggle / fen change).
   useEffect(() => {
-    if (!showPieceValues) return;
+    if (!showHeatmap) return;
     let cancelled = false;
     setHeatmapLoading(true);
     getPieceValues(fen)
@@ -132,11 +185,12 @@ export default function Board() {
       .catch(e => console.error('piece-values failed:', e))
       .finally(() => { if (!cancelled) setHeatmapLoading(false); });
     return () => { cancelled = true; };
-  }, [showPieceValues, fen]);
+  }, [showHeatmap, fen]);
 
-  // Mobility heatmap fetcher (refires on toggle / selected square / fen)
+  // Mobility heatmap is always-on whenever a piece is selected. Drives the
+  // green/red tint on legal-move targets, layered underneath the dots.
   useEffect(() => {
-    if (!showMobility || !selectedSquare) {
+    if (!selectedSquare) {
       setHeatmapMobility(null);
       return;
     }
@@ -147,7 +201,7 @@ export default function Board() {
       .catch(e => console.error('mobility failed:', e))
       .finally(() => { if (!cancelled) setHeatmapLoading(false); });
     return () => { cancelled = true; };
-  }, [showMobility, fen, selectedSquare]);
+  }, [fen, selectedSquare]);
 
   // Handle move click in analysis panel
   const handleMoveClick = (move, index) => {
@@ -159,6 +213,16 @@ export default function Board() {
       fetchExplanation(move);
     }
   };
+
+  // While dragging a piece, treat it as "selected" so the legal-move dots
+  // appear underneath it. Cleared when the drag ends (whether or not the
+  // drop was legal — onDrop also clears on success).
+  function onPieceDragBegin(_piece, sourceSquare) {
+    setSelectedSquare(sourceSquare);
+  }
+  function onPieceDragEnd() {
+    setSelectedSquare(null);
+  }
 
   // Make a move (drag-drop)
   function onDrop(sourceSquare, targetSquare) {
@@ -253,6 +317,16 @@ export default function Board() {
     setInputFen(startFen);
   };
 
+  // Load a random plausible position from the curated list.
+  const loadRandomPosition = () => {
+    const newFen = pickRandomPosition();
+    lastFetchedFen.current = '';
+    setMoveHistory([{ fen: newFen, san: null }]);
+    setHistoryIndex(0);
+    setFen(newFen);
+    setInputFen(newFen);
+  };
+
   const flipBoard = () => setOrientation(o => o === 'white' ? 'black' : 'white');
 
   const handleFenSubmit = (e) => {
@@ -286,7 +360,7 @@ export default function Board() {
     const styles = {};
 
     // Piece-values heatmap — tint each piece's square by its delta_cp.
-    if (showPieceValues && heatmapPieces) {
+    if (showHeatmap && heatmapPieces) {
       for (const p of heatmapPieces.pieces) {
         if (p.delta_cp === 0) continue;
         styles[p.square] = {
@@ -312,11 +386,11 @@ export default function Board() {
         seen.add(m.to);
         const target = game.get(m.to);
 
-        // If mobility heatmap is on for this piece, tint the destination
-        // by the move's evaluation delta. Otherwise leave whatever the
-        // piece-values pass put down.
+        // Mobility heatmap (always-on when a piece is selected): tint each
+        // legal destination by the move's evaluation delta. Falls back to
+        // whatever the piece-values pass put down while mobility loads.
         let bg = styles[m.to]?.backgroundColor;
-        if (showMobility && heatmapMobility?.source_square === selectedSquare) {
+        if (heatmapMobility?.source_square === selectedSquare) {
           const mv = heatmapMobility.moves.find(x => x.square === m.to);
           if (mv) bg = cpToTint(mv.delta_cp, 0.55);
         }
@@ -336,7 +410,7 @@ export default function Board() {
     }
 
     return styles;
-  }, [selectedSquare, fen, showPieceValues, heatmapPieces, showMobility, heatmapMobility]);
+  }, [selectedSquare, fen, showHeatmap, heatmapPieces, heatmapMobility]);
 
   // Quality to color
   const getQualityColor = (quality) => {
@@ -448,13 +522,13 @@ export default function Board() {
           </button>
 
           <button
-            onClick={() => setShowPieceValues(v => !v)}
-            title="Tint each piece by how much it contributes to the position"
+            onClick={() => setShowHeatmap(v => !v)}
+            title="Color each piece by how much it contributes to the position"
             style={{
               padding: '8px 12px',
               borderRadius: '8px',
-              backgroundColor: showPieceValues ? '#3b82f6' : '#27272a',
-              color: showPieceValues ? '#09090b' : '#a1a1aa',
+              backgroundColor: showHeatmap ? '#f97316' : '#27272a',
+              color: showHeatmap ? '#09090b' : '#a1a1aa',
               border: 'none',
               cursor: 'pointer',
               display: 'flex',
@@ -463,18 +537,18 @@ export default function Board() {
               fontSize: '12px'
             }}
           >
-            <BarChart3 size={14} />
-            {showPieceValues && heatmapLoading ? '...' : 'Values'}
+            <Flame size={14} />
+            {showHeatmap && heatmapLoading ? '...' : 'Heatmap'}
           </button>
 
           <button
-            onClick={() => setShowMobility(v => !v)}
-            title="Click a piece — colored squares show how good each move is"
+            onClick={loadRandomPosition}
+            title="Load a random plausible position"
             style={{
               padding: '8px 12px',
               borderRadius: '8px',
-              backgroundColor: showMobility ? '#3b82f6' : '#27272a',
-              color: showMobility ? '#09090b' : '#a1a1aa',
+              backgroundColor: '#27272a',
+              color: '#a1a1aa',
               border: 'none',
               cursor: 'pointer',
               display: 'flex',
@@ -483,8 +557,8 @@ export default function Board() {
               fontSize: '12px'
             }}
           >
-            <Compass size={14} />
-            {showMobility && heatmapLoading ? '...' : 'Mobility'}
+            <Shuffle size={14} />
+            Random
           </button>
           <button onClick={flipBoard} style={{
             padding: '8px',
@@ -529,6 +603,8 @@ export default function Board() {
             position={fen}
             onPieceDrop={onDrop}
             onSquareClick={onSquareClick}
+            onPieceDragBegin={onPieceDragBegin}
+            onPieceDragEnd={onPieceDragEnd}
             boardOrientation={orientation}
             customArrows={customArrows}
             customSquareStyles={customSquareStyles}
