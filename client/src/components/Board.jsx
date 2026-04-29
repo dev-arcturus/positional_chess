@@ -11,19 +11,36 @@ import {
   getBestMove,
   explainMoveAt,
 } from '../engine/analysis';
-import { getPieceValues, getMobility } from '../engine/heatmap';
+import { getPieceValues, streamDestinationValues } from '../engine/heatmap';
 
-// cp → background tint. Positive = green (good for owner / mover),
-// negative = red. Clamped to ±500cp so a hanging queen doesn't drown
-// the rest of the board.
-function cpToTint(cp, alpha = 0.5) {
-  const v = Math.max(-500, Math.min(500, cp));
-  if (v >= 0) {
-    const intensity = v / 500;
-    return `rgba(74, 222, 128, ${(alpha * intensity).toFixed(3)})`;
-  }
-  const intensity = -v / 500;
-  return `rgba(248, 113, 113, ${(alpha * intensity).toFixed(3)})`;
+// Magnitude curve. exp(-|cp|/D) → 1 - that gives 0..1 saturation, with the
+// "considerable around 60cp" calibration the design calls for:
+//   D=80  (deltas):    10cp→0.12, 30cp→0.31, 60cp→0.53, 100cp→0.71, 200cp→0.92
+//   D=200 (absolutes): 100cp→0.39, 300cp→0.78, 500cp→0.92, 900cp→0.99
+// Bigger D for absolute piece-worth so a queen and a passive pawn don't
+// look identically saturated; smaller D for deltas so 60cp swings stand out.
+function magnitude(cp, decayCp) {
+  return 1 - Math.exp(-Math.abs(cp) / decayCp);
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// White → red/green interpolation. White-ish base so near-zero values
+// look neutral; saturated brand greens / reds at large magnitudes.
+function colorForCp(cp, decayCp = 80) {
+  const mag = magnitude(cp, decayCp);
+  const W = [248, 250, 252];                       // slate-50
+  const TARGET = cp >= 0 ? [34, 197, 94] : [239, 68, 68]; // green-500 / red-500
+  const r = Math.round(lerp(W[0], TARGET[0], mag));
+  const g = Math.round(lerp(W[1], TARGET[1], mag));
+  const b = Math.round(lerp(W[2], TARGET[2], mag));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+// Same curve, but for a translucent square-background tint.
+function cpToTint(cp, alpha = 0.5, decayCp = 200) {
+  const mag = magnitude(cp, decayCp);
+  if (cp >= 0) return `rgba(74, 222, 128, ${(alpha * mag).toFixed(3)})`;
+  return `rgba(248, 113, 113, ${(alpha * mag).toFixed(3)})`;
 }
 
 // Curated "plausible" positions — openings just out of theory, sharp
@@ -108,13 +125,27 @@ export default function Board() {
   // Click-to-select with legal-move indicators (also set during drag).
   const [selectedSquare, setSelectedSquare] = useState(null);
 
+  // Drag state — tracked separately from selectedSquare so we know when
+  // we're inside a drag gesture (live-preview only fires during drag).
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragHover, setDragHover] = useState(null);
+
   // Heatmap is default-on: the whole point of this app is showing how much
   // each piece is worth in the current position, and how that worth shifts
-  // as moves are made. Mobility is always-on whenever a piece is selected.
+  // as moves are made.
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [heatmapPieces, setHeatmapPieces] = useState(null);
-  const [heatmapMobility, setHeatmapMobility] = useState(null);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
+
+  // Per-destination "if you moved here, this piece would be worth X" map.
+  // Streamed in by streamDestinationValues as the engine completes each
+  // hypothetical-move evaluation; keys are destination squares.
+  const [destValues, setDestValues] = useState({});
+
+  // Full preview heatmap for the position assuming the dragged piece lands
+  // on dragHover. Drives the live "every other piece changes" rendering
+  // while the user is moving a piece.
+  const [previewHeatmap, setPreviewHeatmap] = useState(null);
 
   const lastFetchedFen = useRef('');
   const sideToMove = fen.split(' ')[1] || 'w';
@@ -163,8 +194,8 @@ export default function Board() {
     }
   }, [fen]);
 
-  // Fetch on FEN change — also resets selection + heatmap data so we don't
-  // briefly show stale colors from the previous position.
+  // Fetch on FEN change — also resets selection + heatmap / preview data
+  // so we don't briefly show stale colors from the previous position.
   useEffect(() => {
     fetchTopMoves(fen);
     setShowHint(false);
@@ -173,10 +204,14 @@ export default function Board() {
     setSelectedMoveIndex(null);
     setSelectedSquare(null);
     setHeatmapPieces(null);
-    setHeatmapMobility(null);
+    setDestValues({});
+    setPreviewHeatmap(null);
+    setDragHover(null);
+    setIsDragging(false);
   }, [fen, fetchTopMoves]);
 
-  // Piece-values heatmap fetcher (refires on toggle / fen change).
+  // Piece-values heatmap fetcher (refires on toggle / fen change). The
+  // numbers on every piece come from this.
   useEffect(() => {
     if (!showHeatmap) return;
     let cancelled = false;
@@ -188,21 +223,49 @@ export default function Board() {
     return () => { cancelled = true; };
   }, [showHeatmap, fen]);
 
-  // Mobility heatmap is always-on whenever a piece is selected. Drives the
-  // green/red tint on legal-move targets, layered underneath the dots.
+  // Stream "moved-piece-value at each legal destination" as soon as a
+  // piece is selected (click) or picked up (drag). Each destination's
+  // value lands one at a time — labels render progressively rather than
+  // waiting for the whole batch.
   useEffect(() => {
-    if (!selectedSquare) {
-      setHeatmapMobility(null);
+    setDestValues({});
+    if (!selectedSquare) return;
+    const cancel = streamDestinationValues(fen, selectedSquare, (r) => {
+      setDestValues(prev => ({ ...prev, [r.dest]: r }));
+    });
+    return cancel;
+  }, [selectedSquare, fen]);
+
+  // Live preview during drag: when the dragged piece is hovering over a
+  // legal destination, fetch the full heatmap for the position assuming
+  // the move was played. Drives the "every other piece updates" effect.
+  useEffect(() => {
+    if (!isDragging || !dragHover || !selectedSquare) {
+      setPreviewHeatmap(null);
+      return;
+    }
+    const newFen = makeMoveLocal(fen, selectedSquare, dragHover);
+    if (!newFen) {
+      setPreviewHeatmap(null);
       return;
     }
     let cancelled = false;
-    setHeatmapLoading(true);
-    getMobility(fen, selectedSquare)
-      .then(r => { if (!cancelled) setHeatmapMobility(r); })
-      .catch(e => console.error('mobility failed:', e))
-      .finally(() => { if (!cancelled) setHeatmapLoading(false); });
+    getPieceValues(newFen)
+      .then(r => { if (!cancelled) setPreviewHeatmap(r); })
+      .catch(() => {});
     return () => { cancelled = true; };
-  }, [fen, selectedSquare]);
+  }, [isDragging, dragHover, selectedSquare, fen]);
+
+  // Local make-move helper that doesn't import the heatmap module's chess
+  // helpers (we have chess.js right here).
+  function makeMoveLocal(currentFen, from, to) {
+    try {
+      const c = new Chess(currentFen);
+      const m = c.move({ from, to, promotion: 'q' });
+      if (m) return c.fen();
+    } catch { /* illegal */ }
+    return null;
+  }
 
   // Handle move click in analysis panel
   const handleMoveClick = (move, index) => {
@@ -216,13 +279,35 @@ export default function Board() {
   };
 
   // While dragging a piece, treat it as "selected" so the legal-move dots
-  // appear underneath it. Cleared when the drag ends (whether or not the
-  // drop was legal — onDrop also clears on success).
+  // appear underneath it. Setting isDragging = true also gates the live
+  // preview heatmap.
   function onPieceDragBegin(_piece, sourceSquare) {
     setSelectedSquare(sourceSquare);
+    setIsDragging(true);
+    setDragHover(null);
   }
   function onPieceDragEnd() {
     setSelectedSquare(null);
+    setIsDragging(false);
+    setDragHover(null);
+  }
+
+  // Fired by react-chessboard while a piece is being dragged over a square.
+  // We only want to set dragHover on legal destinations of the dragged
+  // piece (so previewHeatmap doesn't fire for nonsense squares).
+  function onDragOverSquare(square) {
+    if (!isDragging || !selectedSquare || square === selectedSquare) {
+      setDragHover(null);
+      return;
+    }
+    try {
+      const game = new Chess(fen);
+      const moves = game.moves({ square: selectedSquare, verbose: true });
+      const isLegal = moves.some(m => m.to === square);
+      setDragHover(isLegal ? square : null);
+    } catch {
+      setDragHover(null);
+    }
   }
 
   // Make a move (drag-drop)
@@ -355,15 +440,36 @@ export default function Board() {
     return [];
   }, [showHint, hintMove, selectedMoveIndex, topMoves]);
 
-  // Square styles: piece-value heatmap (background tint), selected-square
-  // highlight, legal-move dots/rings, mobility heatmap on legal-move targets.
+  // Are we currently rendering the live "if you dropped here" preview?
+  const showPreview = isDragging && !!dragHover && !!previewHeatmap;
+
+  // The heatmap that drives backgrounds and (in preview mode) labels.
+  const tintHeatmap = showPreview ? previewHeatmap : heatmapPieces;
+
+  // Set of legal-destination squares for the currently-selected piece.
+  // Used to swap piece-worth labels for destination-change labels there.
+  const legalDestSet = useMemo(() => {
+    if (!selectedSquare) return new Set();
+    try {
+      const game = new Chess(fen);
+      const moves = game.moves({ square: selectedSquare, verbose: true });
+      return new Set(moves.map(m => m.to));
+    } catch { return new Set(); }
+  }, [selectedSquare, fen]);
+
+  // Square styles: piece-value tints, selected-square highlight, legal-move
+  // dots/rings, and (when destValues are loaded) per-destination tints
+  // representing the moved piece's value change.
   const customSquareStyles = useMemo(() => {
     const styles = {};
 
-    // Piece-values heatmap — tint each piece's square by its delta_cp.
-    if (showHeatmap && heatmapPieces) {
-      for (const p of heatmapPieces.pieces) {
+    // Piece-value tints (current OR preview). Skipped for legal destinations
+    // when a piece is selected — those squares get the destination-change
+    // tint instead so the dot/ring isn't fighting two color cues.
+    if (showHeatmap && tintHeatmap) {
+      for (const p of tintHeatmap.pieces) {
         if (p.delta_cp === 0) continue;
+        if (legalDestSet.has(p.square) && !showPreview) continue;
         styles[p.square] = {
           ...(styles[p.square] || {}),
           backgroundColor: cpToTint(p.delta_cp, 0.5),
@@ -372,32 +478,37 @@ export default function Board() {
     }
 
     if (selectedSquare) {
-      // Highlight the selected square (yellow).
+      // Highlight the selected (or being-dragged) square.
       styles[selectedSquare] = {
         ...(styles[selectedSquare] || {}),
-        backgroundColor: 'rgba(250, 204, 21, 0.35)',
+        backgroundColor: 'rgba(250, 204, 21, 0.32)',
       };
 
       // Build legal-move indicators on every unique destination.
       const game = new Chess(fen);
       const moves = game.moves({ square: selectedSquare, verbose: true });
       const seen = new Set();
+      const currentValueCp =
+        heatmapPieces?.pieces.find(p => p.square === selectedSquare)?.delta_cp ?? 0;
+
       for (const m of moves) {
         if (seen.has(m.to)) continue;
         seen.add(m.to);
         const target = game.get(m.to);
 
-        // Mobility heatmap (always-on when a piece is selected): tint each
-        // legal destination by the move's evaluation delta. Falls back to
-        // whatever the piece-values pass put down while mobility loads.
+        // Tint each legal destination by Δ in moved-piece value (delta scale).
+        // Stronger green = much more valuable here; red = much less.
         let bg = styles[m.to]?.backgroundColor;
-        if (heatmapMobility?.source_square === selectedSquare) {
-          const mv = heatmapMobility.moves.find(x => x.square === m.to);
-          if (mv) bg = cpToTint(mv.delta_cp, 0.55);
+        const dv = destValues[m.to];
+        if (dv && !showPreview) {
+          const change = dv.value_cp - currentValueCp;
+          bg = cpToTint(change, 0.55, 80);
+        }
+        // Subtle blue ring for the square being hovered while dragging.
+        if (showPreview && m.to === dragHover) {
+          bg = 'rgba(96, 165, 250, 0.42)';
         }
 
-        // Lichess-style indicator: filled dot for empty squares, hollow ring
-        // for captures (so the captured piece stays visible inside the ring).
         const indicator = target
           ? 'radial-gradient(circle, transparent 60%, rgba(0,0,0,0.4) 65%, rgba(0,0,0,0.4) 75%, transparent 75%)'
           : 'radial-gradient(circle, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.32) 22%, transparent 22%)';
@@ -411,7 +522,10 @@ export default function Board() {
     }
 
     return styles;
-  }, [selectedSquare, fen, showHeatmap, heatmapPieces, heatmapMobility]);
+  }, [
+    selectedSquare, fen, showHeatmap, tintHeatmap,
+    destValues, dragHover, showPreview, heatmapPieces, legalDestSet,
+  ]);
 
   // Square-to-pixel mapping helper, accounting for board flip.
   function squarePxPosition(square) {
@@ -428,49 +542,83 @@ export default function Board() {
     return { left: col * SQ, top: row * SQ, size: SQ };
   }
 
-  // Format a centipawn-pawns delta as a signed label like "+1.3" or "-0.5".
-  function fmtDeltaPawns(v) {
-    if (Math.abs(v) < 0.05) return '0.0';
-    return `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
-  }
-  function colorForDelta(v) {
-    if (v >= 0.05) return '#4ade80';
-    if (v <= -0.05) return '#f87171';
-    return '#d4d4d8';
+  // Format a pawn-delta as a signed label. "+1.3" / "-0.5" / "0.0".
+  function fmtDelta(pawns) {
+    if (Math.abs(pawns) < 0.05) return '0.0';
+    return `${pawns >= 0 ? '+' : ''}${pawns.toFixed(1)}`;
   }
 
-  // Numeric pawn-value badges per piece. The CORE visualization of the app:
-  // each piece's contextual worth — how much it contributes to the current
-  // position, beyond its base material value. Watch these numbers change as
-  // moves are made.
+  // Numeric value badges per piece. THE core visualization: each piece's
+  // contextual worth in the current position, OR — when previewing a drag
+  // hover — the change in worth versus the current position. The labels are
+  // big and centered so the "watch the numbers change as you move" story is
+  // visible at a glance.
   const valueLabels = useMemo(() => {
-    if (!showHeatmap || !heatmapPieces) return [];
+    if (!showHeatmap) return [];
+
+    if (showPreview) {
+      // DELTA mode: every other piece's worth shifts as the dragged piece
+      // moves into place. Show how each piece changes vs. the current
+      // position. Decay = 80 (60cp ≈ "considerable" per design spec).
+      if (!previewHeatmap || !heatmapPieces) return [];
+      const currentByKey = new Map(heatmapPieces.pieces.map(p => [p.square, p]));
+      return previewHeatmap.pieces
+        .filter(p => p.type !== 'k')
+        .map(p => {
+          // The dragged piece moved from selectedSquare → dragHover; for
+          // every other piece, find its current value at the same square.
+          const currentP = p.square === dragHover
+            ? currentByKey.get(selectedSquare)
+            : currentByKey.get(p.square);
+          const currentCp = currentP?.delta_cp ?? 0;
+          const cp = p.delta_cp - currentCp;
+          return {
+            square: p.square,
+            ...squarePxPosition(p.square),
+            color: colorForCp(cp, 80),
+            label: fmtDelta(cp / 100),
+          };
+        });
+    }
+
+    // ABSOLUTE mode: show each piece's standalone worth in the current
+    // position. Skip squares that are legal destinations of a selected
+    // piece — those get destination-change labels instead.
+    if (!heatmapPieces) return [];
     return heatmapPieces.pieces
-      .filter(p => p.type !== 'k') // king's worth is implicitly infinite
+      .filter(p => p.type !== 'k' && !legalDestSet.has(p.square))
       .map(p => ({
         square: p.square,
         ...squarePxPosition(p.square),
-        color: colorForDelta(p.delta_pawns),
-        label: fmtDeltaPawns(p.delta_pawns),
+        color: colorForCp(p.delta_cp, 200),
+        label: fmtDelta(p.delta_pawns),
       }));
-    // squarePxPosition / fmt helpers depend on orientation; useMemo deps cover it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHeatmap, heatmapPieces, orientation]);
+  }, [
+    showHeatmap, heatmapPieces, previewHeatmap,
+    showPreview, dragHover, selectedSquare, orientation, legalDestSet,
+  ]);
 
-  // Numeric labels on legal-move targets when a piece is selected. Each label
-  // says "if you move HERE, the position swings by this many pawns". Direct
-  // visualization of "moving the piece changes its worth and the position".
-  const mobilityLabels = useMemo(() => {
-    if (!selectedSquare || !heatmapMobility) return [];
-    if (heatmapMobility.source_square !== selectedSquare) return [];
-    return heatmapMobility.moves.map(m => ({
-      square: m.square,
-      ...squarePxPosition(m.square),
-      color: colorForDelta(m.delta_pawns),
-      label: fmtDeltaPawns(m.delta_pawns),
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSquare, heatmapMobility, orientation]);
+  // Labels on legal-move targets — the change in the moved piece's value if
+  // it landed here. Streamed in by streamDestinationValues; render any that
+  // have arrived. Hidden during preview mode (those squares are subsumed
+  // by the live preview's piece labels).
+  const destinationLabels = useMemo(() => {
+    if (!showHeatmap || !selectedSquare || showPreview) return [];
+    const currentValueCp =
+      heatmapPieces?.pieces.find(p => p.square === selectedSquare)?.delta_cp ?? 0;
+    return Object.entries(destValues).map(([dest, info]) => {
+      const change = info.value_cp - currentValueCp;
+      return {
+        square: dest,
+        ...squarePxPosition(dest),
+        color: colorForCp(change, 80),
+        label: fmtDelta(change / 100),
+      };
+    });
+  }, [
+    showHeatmap, selectedSquare, destValues,
+    heatmapPieces, showPreview, orientation,
+  ]);
 
   // Quality to color
   const getQualityColor = (quality) => {
@@ -666,6 +814,7 @@ export default function Board() {
             onSquareClick={onSquareClick}
             onPieceDragBegin={onPieceDragBegin}
             onPieceDragEnd={onPieceDragEnd}
+            onDragOverSquare={onDragOverSquare}
             boardOrientation={orientation}
             customArrows={customArrows}
             customSquareStyles={customSquareStyles}
@@ -674,11 +823,18 @@ export default function Board() {
             boardWidth={520}
           />
 
-          {/* Pawn-value badges (bottom-right of each piece). The numbers
-              are each piece's contextual worth — what the engine thinks
-              you'd lose if the piece were removed. Move the piece to a
-              better square and watch the number climb. */}
-          {showHeatmap && valueLabels.length > 0 && (
+          {/* All numeric labels live in one transparent overlay above the
+              board. Two flavors:
+                • valueLabels       — one per piece. ABSOLUTE worth in the
+                  current position, OR the change in worth while a drag is
+                  hovering a legal destination (preview mode).
+                • destinationLabels — one per legal destination. Shows how
+                  the moved piece's worth would change if it landed there.
+
+              Both flavors share the same big-centered design: ~22px bold
+              monospace, color interpolated from white toward saturated
+              green/red as the magnitude grows, no shadow. */}
+          {showHeatmap && (valueLabels.length > 0 || destinationLabels.length > 0) && (
             <div style={{
               position: 'absolute',
               top: 0, left: 0, width: '100%', height: '100%',
@@ -690,47 +846,30 @@ export default function Board() {
                   left: `${v.left}px`, top: `${v.top}px`,
                   width: `${v.size}px`, height: `${v.size}px`,
                   display: 'flex',
-                  alignItems: 'flex-end',
-                  justifyContent: 'flex-end',
-                  padding: '0 4px 2px 0',
-                  fontSize: '11px',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '22px',
                   fontWeight: 800,
-                  fontFamily: 'monospace',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                   color: v.color,
-                  textShadow: '0 0 3px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.9)',
-                  letterSpacing: '-0.02em',
+                  letterSpacing: '-0.04em',
                 }}>
                   {v.label}
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* Mobility badges (top-left of each legal-move target while a
-              piece is selected). The numbers say "if you move THIS piece
-              HERE, the position swings by this many pawns" — direct
-              visualization of how moving a piece changes its worth. */}
-          {mobilityLabels.length > 0 && (
-            <div style={{
-              position: 'absolute',
-              top: 0, left: 0, width: '100%', height: '100%',
-              pointerEvents: 'none', zIndex: 2,
-            }}>
-              {mobilityLabels.map(v => (
-                <div key={`mob-${v.square}`} style={{
+              {destinationLabels.map(v => (
+                <div key={`dest-${v.square}`} style={{
                   position: 'absolute',
                   left: `${v.left}px`, top: `${v.top}px`,
                   width: `${v.size}px`, height: `${v.size}px`,
                   display: 'flex',
-                  alignItems: 'flex-start',
-                  justifyContent: 'flex-start',
-                  padding: '2px 0 0 4px',
-                  fontSize: '10px',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '22px',
                   fontWeight: 800,
-                  fontFamily: 'monospace',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                   color: v.color,
-                  textShadow: '0 0 3px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.9)',
-                  letterSpacing: '-0.02em',
+                  letterSpacing: '-0.04em',
                 }}>
                   {v.label}
                 </div>
