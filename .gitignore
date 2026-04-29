@@ -95,3 +95,4 @@ desktop.ini
 # ---- Stockfish / engine artifacts you might generate locally ----
 *.nnue.tmp
 engine.log
+.vercel

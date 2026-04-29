@@ -1,13 +1,30 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
-import { RefreshCw, RotateCcw, Lightbulb, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  RefreshCw, RotateCcw, Lightbulb, X, ChevronLeft, ChevronRight,
+  BarChart3, Compass,
+} from 'lucide-react';
 import EvalBar from './EvalBar';
 import {
   getTopMoves,
   getBestMove,
   explainMoveAt,
 } from '../engine/analysis';
+import { getPieceValues, getMobility } from '../engine/heatmap';
+
+// cp → background tint. Positive = green (good for owner / mover),
+// negative = red. Clamped to ±500cp so a hanging queen doesn't drown
+// the rest of the board.
+function cpToTint(cp, alpha = 0.5) {
+  const v = Math.max(-500, Math.min(500, cp));
+  if (v >= 0) {
+    const intensity = v / 500;
+    return `rgba(74, 222, 128, ${(alpha * intensity).toFixed(3)})`;
+  }
+  const intensity = -v / 500;
+  return `rgba(248, 113, 113, ${(alpha * intensity).toFixed(3)})`;
+}
 
 export default function Board() {
   // Position state
@@ -34,6 +51,16 @@ export default function Board() {
   const [showHint, setShowHint] = useState(false);
   const [hintMove, setHintMove] = useState(null);
   const [hintLoading, setHintLoading] = useState(false);
+
+  // Click-to-select with legal-move indicators
+  const [selectedSquare, setSelectedSquare] = useState(null);
+
+  // Heatmap toggles + data
+  const [showPieceValues, setShowPieceValues] = useState(false);
+  const [showMobility, setShowMobility] = useState(false);
+  const [heatmapPieces, setHeatmapPieces] = useState(null);
+  const [heatmapMobility, setHeatmapMobility] = useState(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
 
   const lastFetchedFen = useRef('');
   const sideToMove = fen.split(' ')[1] || 'w';
@@ -82,14 +109,45 @@ export default function Board() {
     }
   }, [fen]);
 
-  // Fetch on FEN change
+  // Fetch on FEN change — also resets selection + heatmap data so we don't
+  // briefly show stale colors from the previous position.
   useEffect(() => {
     fetchTopMoves(fen);
     setShowHint(false);
     setHintMove(null);
     setExplanation(null);
     setSelectedMoveIndex(null);
+    setSelectedSquare(null);
+    setHeatmapPieces(null);
+    setHeatmapMobility(null);
   }, [fen, fetchTopMoves]);
+
+  // Piece-values heatmap fetcher (refires on toggle / fen change)
+  useEffect(() => {
+    if (!showPieceValues) return;
+    let cancelled = false;
+    setHeatmapLoading(true);
+    getPieceValues(fen)
+      .then(r => { if (!cancelled) setHeatmapPieces(r); })
+      .catch(e => console.error('piece-values failed:', e))
+      .finally(() => { if (!cancelled) setHeatmapLoading(false); });
+    return () => { cancelled = true; };
+  }, [showPieceValues, fen]);
+
+  // Mobility heatmap fetcher (refires on toggle / selected square / fen)
+  useEffect(() => {
+    if (!showMobility || !selectedSquare) {
+      setHeatmapMobility(null);
+      return;
+    }
+    let cancelled = false;
+    setHeatmapLoading(true);
+    getMobility(fen, selectedSquare)
+      .then(r => { if (!cancelled) setHeatmapMobility(r); })
+      .catch(e => console.error('mobility failed:', e))
+      .finally(() => { if (!cancelled) setHeatmapLoading(false); });
+    return () => { cancelled = true; };
+  }, [showMobility, fen, selectedSquare]);
 
   // Handle move click in analysis panel
   const handleMoveClick = (move, index) => {
@@ -102,7 +160,7 @@ export default function Board() {
     }
   };
 
-  // Make a move
+  // Make a move (drag-drop)
   function onDrop(sourceSquare, targetSquare) {
     try {
       const game = new Chess(fen);
@@ -119,12 +177,49 @@ export default function Board() {
         setHistoryIndex(newHistory.length - 1);
         setFen(newFen);
         setInputFen(newFen);
+        setSelectedSquare(null);
         return true;
       }
     } catch (e) {
       console.error("Move failed:", e);
     }
     return false;
+  }
+
+  // Click-to-select (and click-to-move when a piece is already selected).
+  // Mirrors the standard Lichess / Chess.com flow.
+  function onSquareClick(square) {
+    const game = new Chess(fen);
+
+    // If a piece is already selected and the user clicks a different square,
+    // try to interpret it as a move.
+    if (selectedSquare && selectedSquare !== square) {
+      try {
+        const move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
+        if (move) {
+          const newFen = game.fen();
+          lastFetchedFen.current = '';
+          const newHistory = moveHistory.slice(0, historyIndex + 1);
+          newHistory.push({ fen: newFen, san: move.san });
+          setMoveHistory(newHistory);
+          setHistoryIndex(newHistory.length - 1);
+          setFen(newFen);
+          setInputFen(newFen);
+          setSelectedSquare(null);
+          return;
+        }
+      } catch { /* not a legal move from selected square */ }
+    }
+
+    // Otherwise: select / deselect.
+    const piece = game.get(square);
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+    } else if (piece && piece.color === game.turn()) {
+      setSelectedSquare(square);
+    } else {
+      setSelectedSquare(null);
+    }
   }
 
   // Navigate history
@@ -184,6 +279,64 @@ export default function Board() {
     }
     return [];
   }, [showHint, hintMove, selectedMoveIndex, topMoves]);
+
+  // Square styles: piece-value heatmap (background tint), selected-square
+  // highlight, legal-move dots/rings, mobility heatmap on legal-move targets.
+  const customSquareStyles = useMemo(() => {
+    const styles = {};
+
+    // Piece-values heatmap — tint each piece's square by its delta_cp.
+    if (showPieceValues && heatmapPieces) {
+      for (const p of heatmapPieces.pieces) {
+        if (p.delta_cp === 0) continue;
+        styles[p.square] = {
+          ...(styles[p.square] || {}),
+          backgroundColor: cpToTint(p.delta_cp, 0.5),
+        };
+      }
+    }
+
+    if (selectedSquare) {
+      // Highlight the selected square (yellow).
+      styles[selectedSquare] = {
+        ...(styles[selectedSquare] || {}),
+        backgroundColor: 'rgba(250, 204, 21, 0.35)',
+      };
+
+      // Build legal-move indicators on every unique destination.
+      const game = new Chess(fen);
+      const moves = game.moves({ square: selectedSquare, verbose: true });
+      const seen = new Set();
+      for (const m of moves) {
+        if (seen.has(m.to)) continue;
+        seen.add(m.to);
+        const target = game.get(m.to);
+
+        // If mobility heatmap is on for this piece, tint the destination
+        // by the move's evaluation delta. Otherwise leave whatever the
+        // piece-values pass put down.
+        let bg = styles[m.to]?.backgroundColor;
+        if (showMobility && heatmapMobility?.source_square === selectedSquare) {
+          const mv = heatmapMobility.moves.find(x => x.square === m.to);
+          if (mv) bg = cpToTint(mv.delta_cp, 0.55);
+        }
+
+        // Lichess-style indicator: filled dot for empty squares, hollow ring
+        // for captures (so the captured piece stays visible inside the ring).
+        const indicator = target
+          ? 'radial-gradient(circle, transparent 60%, rgba(0,0,0,0.4) 65%, rgba(0,0,0,0.4) 75%, transparent 75%)'
+          : 'radial-gradient(circle, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.32) 22%, transparent 22%)';
+
+        styles[m.to] = {
+          ...(styles[m.to] || {}),
+          backgroundColor: bg,
+          backgroundImage: indicator,
+        };
+      }
+    }
+
+    return styles;
+  }, [selectedSquare, fen, showPieceValues, heatmapPieces, showMobility, heatmapMobility]);
 
   // Quality to color
   const getQualityColor = (quality) => {
@@ -288,9 +441,50 @@ export default function Board() {
               gap: '6px',
               fontSize: '12px'
             }}
+            title="Show the engine's recommended move"
           >
             {showHint ? <X size={14} /> : <Lightbulb size={14} />}
             {hintLoading ? '...' : (showHint ? 'Hide' : 'Hint')}
+          </button>
+
+          <button
+            onClick={() => setShowPieceValues(v => !v)}
+            title="Tint each piece by how much it contributes to the position"
+            style={{
+              padding: '8px 12px',
+              borderRadius: '8px',
+              backgroundColor: showPieceValues ? '#3b82f6' : '#27272a',
+              color: showPieceValues ? '#09090b' : '#a1a1aa',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px'
+            }}
+          >
+            <BarChart3 size={14} />
+            {showPieceValues && heatmapLoading ? '...' : 'Values'}
+          </button>
+
+          <button
+            onClick={() => setShowMobility(v => !v)}
+            title="Click a piece — colored squares show how good each move is"
+            style={{
+              padding: '8px 12px',
+              borderRadius: '8px',
+              backgroundColor: showMobility ? '#3b82f6' : '#27272a',
+              color: showMobility ? '#09090b' : '#a1a1aa',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px'
+            }}
+          >
+            <Compass size={14} />
+            {showMobility && heatmapLoading ? '...' : 'Mobility'}
           </button>
           <button onClick={flipBoard} style={{
             padding: '8px',
@@ -334,8 +528,10 @@ export default function Board() {
           <Chessboard
             position={fen}
             onPieceDrop={onDrop}
+            onSquareClick={onSquareClick}
             boardOrientation={orientation}
             customArrows={customArrows}
+            customSquareStyles={customSquareStyles}
             animationDuration={150}
             arePiecesDraggable={true}
             boardWidth={520}
