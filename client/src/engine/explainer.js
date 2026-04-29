@@ -1,10 +1,12 @@
-// Browser-side move explainer — port of the (deprecated) server explainer.
-// Win-rate sigmoid + tactical motifs + brilliant-via-top-2.
+// Browser-side move explainer.
+// Lichess-style win-rate sigmoid + top-N comparison.
+// SEE-based sacrifice detection. Tactical motifs: fork, pin, skewer,
+// discovered check, removal-of-defender.
 
 import { Chess } from 'chess.js';
 
 const PIECE_VALUE = { p: 100, n: 300, b: 320, r: 500, q: 900, k: 20_000 };
-const PIECE_NAME = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+const PIECE_NAME  = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
 const PST = {
   p: [
@@ -69,6 +71,10 @@ const PST = {
   ],
 };
 
+// ───────────────────────────────────────────────────────────────────────────
+// Coordinate / board helpers
+// ───────────────────────────────────────────────────────────────────────────
+
 function squareToFR(sq) {
   return [sq.charCodeAt(0) - 97, parseInt(sq[1], 10) - 1];
 }
@@ -85,34 +91,12 @@ export function getPSTValue(pieceType, square, color) {
   return table[row][file];
 }
 
-export function winRate(cpWhitePOV) {
-  const clamped = Math.max(-2000, Math.min(2000, cpWhitePOV));
-  return 100 / (1 + Math.exp(-clamped / 300));
-}
-
-function winRateDelta(evalBeforeWhite, evalAfterWhite, moverColor) {
-  const wrBefore = winRate(evalBeforeWhite);
-  const wrAfter = winRate(evalAfterWhite);
-  return moverColor === 'w' ? (wrAfter - wrBefore) : (wrBefore - wrAfter);
-}
-
-function classifyByWinRateDelta(wrDelta) {
-  if (wrDelta >= 5) return 'great';
-  if (wrDelta >= -2) return 'good';
-  if (wrDelta >= -5) return 'neutral';
-  if (wrDelta >= -10) return 'inaccuracy';
-  if (wrDelta >= -20) return 'mistake';
-  return 'blunder';
-}
-
 function findKing(chess, color) {
   const board = chess.board();
   for (let r = 0; r < 8; r++) {
     for (let f = 0; f < 8; f++) {
       const p = board[r][f];
-      if (p && p.type === 'k' && p.color === color) {
-        return frToSquare(f, 7 - r);
-      }
+      if (p && p.type === 'k' && p.color === color) return frToSquare(f, 7 - r);
     }
   }
   return null;
@@ -134,28 +118,78 @@ function iterateBoardSquares(chess, callback) {
   }
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Win-rate model (Lichess-style sigmoid)
+// ───────────────────────────────────────────────────────────────────────────
+
+export function winRate(cpWhitePOV) {
+  const clamped = Math.max(-2000, Math.min(2000, cpWhitePOV));
+  return 100 / (1 + Math.exp(-clamped / 300));
+}
+
+function winRateFromMover(cpMoverPOV) {
+  return winRate(cpMoverPOV);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Static Exchange Evaluation (SEE)
+//
+// Returns the net material that the side starting an exchange on `square`
+// expects to gain (in centipawns). Exchanges that lose material return 0
+// thanks to the "stand pat" `Math.max(0, …)` at each level of the recursion.
+//
+// chess.attackers() correctly accounts for x-ray attackers as we mutate the
+// board, because each recursive call recomputes attackers on the current
+// position. We snapshot the FEN before mutating and restore afterwards.
+// ───────────────────────────────────────────────────────────────────────────
+
+export function see(chess, square, attackingColor) {
+  const target = chess.get(square);
+  if (!target) return 0;
+  const attackers = chess.attackers(square, attackingColor);
+  if (!attackers || attackers.length === 0) return 0;
+
+  // Cheapest attacker
+  let cheapestSq = attackers[0];
+  let cheapestVal = PIECE_VALUE[chess.get(cheapestSq).type];
+  for (const sq of attackers) {
+    const v = PIECE_VALUE[chess.get(sq).type];
+    if (v < cheapestVal) {
+      cheapestVal = v;
+      cheapestSq = sq;
+    }
+  }
+
+  const capturedValue = PIECE_VALUE[target.type];
+  const fenSnap = chess.fen();
+  const attackerPiece = { ...chess.get(cheapestSq) };
+
+  chess.remove(cheapestSq);
+  chess.remove(square);
+  chess.put({ type: attackerPiece.type, color: attackerPiece.color }, square);
+
+  const opponent = attackingColor === 'w' ? 'b' : 'w';
+  const opponentGain = see(chess, square, opponent);
+
+  chess.load(fenSnap);
+
+  return Math.max(0, capturedValue - opponentGain);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tactical motifs
+// ───────────────────────────────────────────────────────────────────────────
+
 function squaresAttackedFrom(chess, fromSquare) {
   const piece = chess.get(fromSquare);
   if (!piece) return [];
   const attacked = [];
   iterateBoardSquares(chess, (sq) => {
     if (sq === fromSquare) return;
-    const attackers = chess.attackers(sq, piece.color);
-    if (attackers && attackers.includes(fromSquare)) attacked.push(sq);
+    const a = chess.attackers(sq, piece.color);
+    if (a && a.includes(fromSquare)) attacked.push(sq);
   });
   return attacked;
-}
-
-export function isHanging(chess, square) {
-  const piece = chess.get(square);
-  if (!piece || piece.type === 'k') return false;
-  const opponent = piece.color === 'w' ? 'b' : 'w';
-  const attackers = chess.attackers(square, opponent);
-  if (!attackers || attackers.length === 0) return false;
-  const defenders = chess.attackers(square, piece.color);
-  if (!defenders || defenders.length === 0) return true;
-  const minAttackerVal = Math.min(...attackers.map(s => PIECE_VALUE[chess.get(s).type]));
-  return minAttackerVal < PIECE_VALUE[piece.type];
 }
 
 function detectFork(chessAfter, toSquare, movingPiece) {
@@ -192,6 +226,8 @@ function rayDirections(pieceType) {
   return [];
 }
 
+// Pin: along a ray from the moving (sliding) piece, the first enemy is
+// LESS valuable than the second.
 function detectPin(chessAfter, toSquare, movingPiece) {
   if (!['b', 'r', 'q'].includes(movingPiece.type)) return null;
   const opponent = movingPiece.color === 'w' ? 'b' : 'w';
@@ -221,6 +257,37 @@ function detectPin(chessAfter, toSquare, movingPiece) {
   return null;
 }
 
+// Skewer: the inverse of a pin. First enemy along the ray is MORE valuable;
+// it must move and exposes a less-valuable piece behind it.
+function detectSkewer(chessAfter, toSquare, movingPiece) {
+  if (!['b', 'r', 'q'].includes(movingPiece.type)) return null;
+  const opponent = movingPiece.color === 'w' ? 'b' : 'w';
+  const [fromFile, fromRank] = squareToFR(toSquare);
+  for (const [df, dr] of rayDirections(movingPiece.type)) {
+    let first = null;
+    let second = null;
+    for (let i = 1; i < 8; i++) {
+      const f = fromFile + df * i;
+      const r = fromRank + dr * i;
+      if (f < 0 || f > 7 || r < 0 || r > 7) break;
+      const sq = frToSquare(f, r);
+      const piece = chessAfter.get(sq);
+      if (!piece) continue;
+      if (!first) {
+        if (piece.color === opponent) first = { square: sq, type: piece.type };
+        else break;
+      } else {
+        if (piece.color === opponent) second = { square: sq, type: piece.type };
+        break;
+      }
+    }
+    if (first && second && PIECE_VALUE[first.type] > PIECE_VALUE[second.type]) {
+      return { skewered: first, behind: second };
+    }
+  }
+  return null;
+}
+
 function detectRemovalOfDefender(chessBefore, chessAfter, capturedSquare) {
   if (!capturedSquare) return null;
   const captured = chessBefore.get(capturedSquare);
@@ -231,19 +298,42 @@ function detectRemovalOfDefender(chessBefore, chessAfter, capturedSquare) {
     if (piece.color !== captured.color || piece.type === 'k') return;
     const defendersBefore = chessBefore.attackers(sq, captured.color);
     if (!defendersBefore || !defendersBefore.includes(capturedSquare)) return;
-    if (!isHanging(chessBefore, sq) && isHanging(chessAfter, sq)) {
+    if (!isHangingByMaterial(chessBefore, sq) && isHangingByMaterial(chessAfter, sq)) {
       result = { square: sq, type: piece.type };
     }
   });
   return result;
 }
 
-function detectSacrifice(chessAfter, toSquare, movingPiece, capturedPiece) {
-  if (!isHanging(chessAfter, toSquare)) return false;
-  const moverVal = PIECE_VALUE[movingPiece.type];
-  const recoveryVal = capturedPiece ? PIECE_VALUE[capturedPiece.type] : 0;
-  return (moverVal - recoveryVal) >= 200;
+// Quick "hangs material" check used by removal-of-defender. Cheap heuristic
+// (cheapest attacker < piece value); the SEE-based version below is for
+// real sacrifice detection.
+function isHangingByMaterial(chess, square) {
+  const piece = chess.get(square);
+  if (!piece || piece.type === 'k') return false;
+  const opponent = piece.color === 'w' ? 'b' : 'w';
+  const attackers = chess.attackers(square, opponent);
+  if (!attackers || attackers.length === 0) return false;
+  const defenders = chess.attackers(square, piece.color);
+  if (!defenders || defenders.length === 0) return true;
+  const minAttackerVal = Math.min(...attackers.map(s => PIECE_VALUE[chess.get(s).type]));
+  return minAttackerVal < PIECE_VALUE[piece.type];
 }
+
+// SEE-based sacrifice: would the opponent's optimal capture sequence
+// against `toSquare` net them at least 200cp, accounting for any piece we
+// captured on this move?
+function detectSacrificeViaSEE(chessAfter, toSquare, movingPiece, capturedPiece) {
+  const opponent = movingPiece.color === 'w' ? 'b' : 'w';
+  const opponentGain = see(chessAfter, toSquare, opponent);
+  const recovered = capturedPiece ? PIECE_VALUE[capturedPiece.type] : 0;
+  const netMaterial = recovered - opponentGain; // mover's POV
+  return netMaterial <= -200;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Move metadata
+// ───────────────────────────────────────────────────────────────────────────
 
 function getMoveMeta(fenBefore, moveUCI) {
   const chess = new Chess(fenBefore);
@@ -257,10 +347,104 @@ function getMoveMeta(fenBefore, moveUCI) {
   return { san: moveUCI, flags: '', promotion: null };
 }
 
-function isPlayerMoveTopEngine(topMoves, moveUCI) {
-  if (!Array.isArray(topMoves) || topMoves.length === 0) return false;
-  return topMoves[0].move === moveUCI;
+// ───────────────────────────────────────────────────────────────────────────
+// Classifier
+//
+//   loss   = wrBest_mover - wrPlayed_mover    (in win-rate percentage points)
+//   onlyMoveGap = wrBest_mover - wrSecondBest_mover
+//   isOnlyMove  = onlyMoveGap >= 15           (best is uniquely good)
+//   difficulty  = how skewed the position already was
+//                 (decided positions weight loss less)
+//
+// Quality ladder:
+//   brilliant = best move + only-move + real (SEE) sacrifice + position not already won
+//   great     = best move + only-move
+//   best      = engine's top choice
+//   good      = effective loss < 3 pp
+//   neutral   = effective loss < 6 pp
+//   inaccuracy= effective loss < 12 pp
+//   mistake   = effective loss < 20 pp
+//   blunder   = effective loss ≥ 20 pp
+// ───────────────────────────────────────────────────────────────────────────
+
+function moverScoreToWhite(scoreMoverPOV, moverColor) {
+  return moverColor === 'w' ? scoreMoverPOV : -scoreMoverPOV;
 }
+
+function classifyMove({
+  moveUCI,
+  moverColor,
+  evalBeforeWhite,
+  evalAfterWhite,
+  topMoves,
+  sacrifice,
+}) {
+  // Mover-perspective win-rate helper
+  const wrMover = (cpWhite) => moverColor === 'w' ? winRate(cpWhite) : 100 - winRate(cpWhite);
+
+  const best = topMoves && topMoves[0];
+  const second = topMoves && topMoves[1];
+
+  // Convert engine scores (mover POV) to white POV for the win-rate function
+  const bestWhite = best ? moverScoreToWhite(best.score, moverColor) : evalAfterWhite;
+  const secondWhite = second ? moverScoreToWhite(second.score, moverColor) : bestWhite;
+
+  const wrBefore = wrMover(evalBeforeWhite);
+  const wrPlayed = wrMover(evalAfterWhite);
+  const wrBest   = wrMover(bestWhite);
+  const wrSecond = wrMover(secondWhite);
+
+  const loss = Math.max(0, wrBest - wrPlayed);
+  const onlyMoveGap = wrBest - wrSecond;
+  const isOnlyMove = onlyMoveGap >= 15;
+  const isBestMove = best && best.move === moveUCI;
+
+  // Difficulty weighting: when one side is already clearly winning/losing,
+  // small losses matter less. equity = distance from 50% (mover's POV).
+  const equity = Math.abs(wrBefore - 50);
+  const difficultyFactor =
+    equity > 35 ? 0.5 :
+    equity > 20 ? 0.75 :
+    1.0;
+  const effectiveLoss = loss * difficultyFactor;
+
+  let quality;
+  if (isBestMove && isOnlyMove && sacrifice && wrBefore < 85) {
+    quality = 'brilliant';
+  } else if (isBestMove && isOnlyMove) {
+    quality = 'great';
+  } else if (isBestMove) {
+    quality = 'best';
+  } else if (effectiveLoss < 3) {
+    quality = 'good';
+  } else if (effectiveLoss < 6) {
+    quality = 'neutral';
+  } else if (effectiveLoss < 12) {
+    quality = 'inaccuracy';
+  } else if (effectiveLoss < 20) {
+    quality = 'mistake';
+  } else {
+    quality = 'blunder';
+  }
+
+  return {
+    quality,
+    loss,
+    effectiveLoss,
+    wrBefore,
+    wrPlayed,
+    wrBest,
+    wrSecond,
+    onlyMoveGap,
+    isBestMove,
+    isOnlyMove,
+    bestMoveUCI: best ? best.move : null,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Public entry point
+// ───────────────────────────────────────────────────────────────────────────
 
 export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter, opts = {}) {
   const chessBefore = new Chess(fenBefore);
@@ -278,12 +462,29 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
   const factors = [];
   const motifs = [];
 
-  const wrDelta = winRateDelta(evalBefore, evalAfter, sideToMove);
-  let quality = classifyByWinRateDelta(wrDelta);
+  // Sacrifice detection upfront — needed by classifier.
+  const sacrifice = movingPiece
+    ? detectSacrificeViaSEE(chessAfter, to, movingPiece, captured)
+    : false;
+  if (sacrifice) motifs.push('sacrifice');
+
+  // Classify against engine top moves.
+  const cls = classifyMove({
+    moveUCI,
+    moverColor: sideToMove,
+    evalBeforeWhite: evalBefore,
+    evalAfterWhite: evalAfter,
+    topMoves: opts.topMoves || [],
+    sacrifice,
+  });
+  let quality = cls.quality;
+
+  // Eval delta from mover's POV (display only).
   const evalDeltaCp = sideToMove === 'w'
     ? (evalAfter - evalBefore)
     : (evalBefore - evalAfter);
 
+  // ───── Terminal-state shortcuts ─────
   if (chessAfter.isCheckmate()) {
     return {
       san,
@@ -295,11 +496,12 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
       evalBefore: evalBefore / 100,
       evalAfter: evalAfter / 100,
       evalDelta: evalDeltaCp / 100,
-      winRateDelta: parseFloat(wrDelta.toFixed(2)),
-      isTopMove: isPlayerMoveTopEngine(opts.topMoves, moveUCI),
+      winRateLoss: 0,
+      isBestMove: cls.isBestMove,
+      isOnlyMove: cls.isOnlyMove,
+      bestMoveUCI: cls.bestMoveUCI,
     };
   }
-
   if (chessAfter.isStalemate()) {
     const wasWinning = sideToMove === 'w' ? evalBefore > 200 : evalBefore < -200;
     return {
@@ -312,8 +514,10 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
       evalBefore: evalBefore / 100,
       evalAfter: 0,
       evalDelta: wasWinning ? -evalBefore / 100 : 0,
-      winRateDelta: parseFloat(wrDelta.toFixed(2)),
-      isTopMove: isPlayerMoveTopEngine(opts.topMoves, moveUCI),
+      winRateLoss: cls.loss,
+      isBestMove: cls.isBestMove,
+      isOnlyMove: cls.isOnlyMove,
+      bestMoveUCI: cls.bestMoveUCI,
     };
   }
 
@@ -321,6 +525,7 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
   if (chessAfter.isDrawByFiftyMoves()) motifs.push('fifty-move-rule');
   if (chessAfter.isInsufficientMaterial()) motifs.push('insufficient-material');
 
+  // ───── Capture / castling / en passant / promotion (via Move flags) ─────
   if (captured) {
     explanations.push(`Captures the ${PIECE_NAME[captured.type]}`);
     factors.push({
@@ -330,7 +535,6 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
     });
     motifs.push('capture');
   }
-
   if (flags.includes('k')) {
     explanations.push('Castles kingside');
     factors.push({ type: 'castling', side: 'king', value_pawns: 0.5 });
@@ -340,12 +544,10 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
     factors.push({ type: 'castling', side: 'queen', value_pawns: 0.5 });
     motifs.push('castling-queenside');
   }
-
   if (flags.includes('e')) {
     explanations.push('Captures en passant');
     motifs.push('en-passant');
   }
-
   if (flags.includes('p') && promotedTo) {
     explanations.push(`Promotes to ${PIECE_NAME[promotedTo]}`);
     factors.push({
@@ -356,6 +558,7 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
     motifs.push('promotion');
   }
 
+  // ───── Tactical motifs ─────
   if (movingPiece) {
     const fork = detectFork(chessAfter, to, movingPiece);
     if (fork) {
@@ -380,6 +583,15 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
       motifs.push('pin');
     }
 
+    const skewer = detectSkewer(chessAfter, to, movingPiece);
+    if (skewer) {
+      explanations.push(
+        `Skewers the ${PIECE_NAME[skewer.skewered.type]}, exposing the ${PIECE_NAME[skewer.behind.type]}`
+      );
+      factors.push({ type: 'skewer', value_pawns: 1.0 });
+      motifs.push('skewer');
+    }
+
     const removal = detectRemovalOfDefender(chessBefore, chessAfter, captured ? to : null);
     if (removal) {
       explanations.push(`Removes the defender of the ${PIECE_NAME[removal.type]}`);
@@ -387,15 +599,20 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
       motifs.push('removal-of-defender');
     }
 
-    const sacrifice = detectSacrifice(chessAfter, to, movingPiece, captured);
-    if (sacrifice) motifs.push('sacrifice');
-
     if (chessAfter.inCheck() && !motifs.includes('discovered-check')) {
       explanations.push('Gives check');
       factors.push({ type: 'check', value_pawns: 0.5 });
       motifs.push('check');
     }
 
+    if (sacrifice) {
+      explanations.push(
+        `Sacrifices the ${PIECE_NAME[movingPiece.type]} for tactical compensation`
+      );
+      factors.push({ type: 'sacrifice', value_pawns: PIECE_VALUE[movingPiece.type] / 100 });
+    }
+
+    // ───── Positional factors (PST / center / development / king attack) ─────
     if (movingPiece.type !== 'k') {
       const pstBefore = getPSTValue(movingPiece.type, from, movingPiece.color);
       const pstAfter = getPSTValue(movingPiece.type, to, movingPiece.color);
@@ -410,7 +627,6 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
         factors.push({ type: 'activity', value_pawns: improvement / 100 });
       }
     }
-
     if (['d4', 'd5', 'e4', 'e5'].includes(to)) {
       if (movingPiece.type === 'p') {
         explanations.push('Stakes a claim in the center');
@@ -420,7 +636,6 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
         factors.push({ type: 'center_control', value_pawns: 0.2 });
       }
     }
-
     const moveNum = chessBefore.moveNumber();
     if (moveNum <= 12 && (movingPiece.type === 'n' || movingPiece.type === 'b')) {
       const startRank = movingPiece.color === 'w' ? '1' : '8';
@@ -429,7 +644,6 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
         factors.push({ type: 'development', value_pawns: 0.3 });
       }
     }
-
     const oppKing = findKing(chessAfter, opponent);
     if (oppKing && ['q', 'r', 'b', 'n'].includes(movingPiece.type)) {
       const distBefore = squareDistance(from, oppKing);
@@ -439,27 +653,21 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
         factors.push({ type: 'king_attack', value_pawns: 0.3 });
       }
     }
-
-    const isTop = isPlayerMoveTopEngine(opts.topMoves, moveUCI);
-    if (sacrifice && isTop && wrDelta >= -2) {
-      quality = 'brilliant';
-    } else if (isTop && (quality === 'good' || quality === 'great' || quality === 'neutral')) {
-      quality = 'best';
-    }
   }
 
+  // Mate-in-N annotation.
   let mateNote = '';
   if (opts.mateAfter !== undefined && opts.mateAfter !== null) {
-    const myMate =
-      (sideToMove === 'w' && opts.mateAfter > 0) ||
-      (sideToMove === 'b' && opts.mateAfter < 0);
+    const myMate = (sideToMove === 'w' && opts.mateAfter > 0) ||
+                   (sideToMove === 'b' && opts.mateAfter < 0);
     const n = Math.abs(opts.mateAfter);
     mateNote = myMate ? ` Forces mate in ${n}.` : ` (Opponent has mate in ${n}.)`;
   }
 
+  // Build summary using both quality and a context-aware addendum.
   const summaries = {
     brilliant:  'A brilliant move — a non-obvious tactical resource.',
-    great:      'A great move that significantly improves your position.',
+    great:      'A great move — the only move that keeps the advantage.',
     best:       'The best move in the position.',
     good:       'A solid move that maintains the balance.',
     neutral:    'A reasonable move.',
@@ -467,7 +675,13 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
     mistake:    'A mistake. The position is now worse than it should be.',
     blunder:    'A blunder. This loses significant advantage.',
   };
-  const summary = summaries[quality] || 'A move.';
+  let summary = summaries[quality] || 'A move.';
+
+  // Append "best was X" for non-best classifications, when we know the alternative.
+  let bestMoveSan = null;
+  if (!cls.isBestMove && cls.bestMoveUCI && cls.bestMoveUCI !== moveUCI) {
+    bestMoveSan = uciToSanSafe(fenBefore, cls.bestMoveUCI);
+  }
 
   const details = explanations.length > 0
     ? explanations.join('. ') + '.' + mateNote
@@ -483,7 +697,30 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
     evalBefore: evalBefore / 100,
     evalAfter: evalAfter / 100,
     evalDelta: evalDeltaCp / 100,
-    winRateDelta: parseFloat(wrDelta.toFixed(2)),
-    isTopMove: isPlayerMoveTopEngine(opts.topMoves, moveUCI),
+    winRateLoss: parseFloat(cls.loss.toFixed(2)),
+    effectiveLoss: parseFloat(cls.effectiveLoss.toFixed(2)),
+    onlyMoveGap: parseFloat(cls.onlyMoveGap.toFixed(2)),
+    isBestMove: cls.isBestMove,
+    isOnlyMove: cls.isOnlyMove,
+    bestMoveUCI: cls.bestMoveUCI,
+    bestMoveSan,
   };
 }
+
+// Local helper so explainer doesn't need to import from chess.js helpers.
+function uciToSanSafe(fen, uci) {
+  if (typeof uci !== 'string' || uci.length < 4) return uci;
+  try {
+    const c = new Chess(fen);
+    const m = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
+    return m ? m.san : uci;
+  } catch {
+    return uci;
+  }
+}
+
+export {
+  see as _see,            // exported for tests / debugging
+  detectSkewer as _detectSkewer,
+  detectSacrificeViaSEE as _detectSacrificeViaSEE,
+};

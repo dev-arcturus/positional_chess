@@ -448,6 +448,30 @@ export default function Board() {
                           <div style={{ fontSize: '12px', color: '#a1a1aa' }}>
                             {explanation.details}
                           </div>
+                          {explanation.bestMoveSan && !explanation.isBestMove && (
+                            <div style={{
+                              marginTop: '8px',
+                              fontSize: '11px',
+                              color: '#a1a1aa',
+                              fontFamily: 'monospace'
+                            }}>
+                              Best was{' '}
+                              <span style={{
+                                color: '#4ade80',
+                                fontWeight: 600,
+                                padding: '2px 6px',
+                                borderRadius: '3px',
+                                backgroundColor: 'rgba(74, 222, 128, 0.12)',
+                              }}>
+                                {explanation.bestMoveSan}
+                              </span>
+                              {typeof explanation.winRateLoss === 'number' && explanation.winRateLoss >= 1 && (
+                                <span style={{ color: '#71717a', marginLeft: '6px' }}>
+                                  ({explanation.winRateLoss.toFixed(1)}% win-rate lost)
+                                </span>
+                              )}
+                            </div>
+                          )}
                           {explanation.factors?.length > 0 && (
                             <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                               {explanation.factors.map((f, i) => (
