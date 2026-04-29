@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
-import axios from 'axios';
 import { RefreshCw, RotateCcw, Lightbulb, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import EvalBar from './EvalBar';
-
-const API_URL = 'http://localhost:3000/api';
+import {
+  getTopMoves,
+  getBestMove,
+  explainMoveAt,
+} from '../engine/analysis';
 
 export default function Board() {
   // Position state
@@ -43,9 +45,9 @@ export default function Board() {
 
     setTopMovesLoading(true);
     try {
-      const response = await axios.post(`${API_URL}/top-moves`, { fen: currentFen, count: 10 });
-      setTopMoves(response.data.moves || []);
-      setEvalCp(response.data.eval_cp);
+      const result = await getTopMoves(currentFen, 10);
+      setTopMoves(result.moves || []);
+      setEvalCp(result.eval_cp);
     } catch (error) {
       console.error("Top moves failed", error);
     } finally {
@@ -57,8 +59,8 @@ export default function Board() {
   const fetchExplanation = useCallback(async (move) => {
     setExplanationLoading(true);
     try {
-      const response = await axios.post(`${API_URL}/explain-move`, { fen, move: move.move });
-      setExplanation(response.data);
+      const result = await explainMoveAt(fen, move.move);
+      setExplanation(result);
     } catch (error) {
       console.error("Explanation failed", error);
     } finally {
@@ -70,8 +72,8 @@ export default function Board() {
   const fetchHint = useCallback(async () => {
     setHintLoading(true);
     try {
-      const response = await axios.post(`${API_URL}/best-move`, { fen });
-      setHintMove(response.data);
+      const result = await getBestMove(fen);
+      setHintMove(result);
       setShowHint(true);
     } catch (error) {
       console.error("Hint failed", error);
@@ -187,12 +189,14 @@ export default function Board() {
   const getQualityColor = (quality) => {
     switch (quality) {
       case 'brilliant': return '#22d3ee';
-      case 'good': return '#4ade80';
-      case 'neutral': return '#a1a1aa';
-      case 'inaccuracy': return '#fbbf24';
-      case 'mistake': return '#fb923c';
-      case 'blunder': return '#ef4444';
-      default: return '#a1a1aa';
+      case 'great':     return '#34d399';
+      case 'best':      return '#4ade80';
+      case 'good':      return '#86efac';
+      case 'neutral':   return '#a1a1aa';
+      case 'inaccuracy':return '#fbbf24';
+      case 'mistake':   return '#fb923c';
+      case 'blunder':   return '#ef4444';
+      default:          return '#a1a1aa';
     }
   };
 
@@ -444,6 +448,30 @@ export default function Board() {
                           <div style={{ fontSize: '12px', color: '#a1a1aa' }}>
                             {explanation.details}
                           </div>
+                          {explanation.bestMoveSan && !explanation.isBestMove && (
+                            <div style={{
+                              marginTop: '8px',
+                              fontSize: '11px',
+                              color: '#a1a1aa',
+                              fontFamily: 'monospace'
+                            }}>
+                              Best was{' '}
+                              <span style={{
+                                color: '#4ade80',
+                                fontWeight: 600,
+                                padding: '2px 6px',
+                                borderRadius: '3px',
+                                backgroundColor: 'rgba(74, 222, 128, 0.12)',
+                              }}>
+                                {explanation.bestMoveSan}
+                              </span>
+                              {typeof explanation.winRateLoss === 'number' && explanation.winRateLoss >= 1 && (
+                                <span style={{ color: '#71717a', marginLeft: '6px' }}>
+                                  ({explanation.winRateLoss.toFixed(1)}% win-rate lost)
+                                </span>
+                              )}
+                            </div>
+                          )}
                           {explanation.factors?.length > 0 && (
                             <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                               {explanation.factors.map((f, i) => (

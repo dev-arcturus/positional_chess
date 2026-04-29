@@ -1,8 +1,10 @@
 # Chess Analysis Studio
 
-A browser-based chess **analysis and visualization tool** that pairs a React UI with a Node/Express backend driving a [Stockfish](https://stockfishchess.org/) engine over UCI. Load any position, see the engine's evaluation in real time, browse the top candidate moves with their principal variations, and get a plain-language explanation of *why* a move is good, bad, or brilliant.
+A browser-based chess analysis tool. **Stockfish runs in the browser via WebAssembly** — there is no backend. Load any position, see the engine's evaluation in real time, browse top candidate moves with their principal variations, and get a plain-language explanation of *why* a move is good, bad, or brilliant.
 
-This is **not** a chess server (you cannot play against another human or against the engine yet — see [Roadmap](#roadmap--future-work)). It is an analysis cockpit: think Lichess Analysis Board, scaled down, self-hostable, and easier to extend.
+This is the kind of analysis cockpit you'd find on Lichess, scaled down to a single-page app you can self-host on any static host (or Vercel — see [Deploy to Vercel](#deploy-to-vercel)).
+
+> **Heads-up:** the `server/` directory is now **legacy**. The full analysis pipeline lives in `client/src/engine/`. The server is kept around as reference for the same logic — you do not need to run it.
 
 ---
 
@@ -16,12 +18,10 @@ This is **not** a chess server (you cannot play against another human or against
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Running Locally](#running-locally)
-- [Configuration](#configuration)
-- [API Reference](#api-reference)
+- [Deploy to Vercel](#deploy-to-vercel)
+- [Public API (`client/src/engine/`)](#public-api-clientsrcengine)
 - [How the Analysis Pipeline Works](#how-the-analysis-pipeline-works)
-- [Development](#development)
 - [Known Gaps and Problems](#known-gaps-and-problems)
-- [Recent Server Overhaul](#recent-server-overhaul)
 - [Roadmap / Future Work](#roadmap--future-work)
 - [Contributing](#contributing)
 - [License](#license)
@@ -30,73 +30,60 @@ This is **not** a chess server (you cannot play against another human or against
 
 ## Highlights
 
-- **Stockfish-powered evaluation** — depth 12–14 search, MultiPV up to 10, principal variation extraction.
-- **Eval bar** — clamped to ±10 pawns, mate-aware (`M3`, `-M5`), updates on every move.
-- **Top moves panel** — best 10 candidate moves ranked by centipawn delta, with PV preview and color-coded ratings.
-- **Move explainer** — heuristic + engine hybrid that classifies a move as *brilliant / good / neutral / inaccuracy / mistake / blunder* and surfaces contributing factors (capture, check, piece activity, center control, development, castling, king attack).
-- **Position heatmaps** — per-piece value heatmap, mobility heatmap (where can this piece usefully go?), and move-preview heatmap (what does the position look like after this move?).
+- **Browser-side Stockfish 18 (lite, single-threaded WASM)** — depth 12–14 search, MultiPV up to 10, principal variation extraction. ~7 MB WASM, gzipped on the wire.
+- **No backend** — pure static deploy. Works offline once the WASM has been fetched once.
+- **Eval bar** — clamped to ±10 pawns, mate-aware, updates on every move.
+- **Top moves panel** — best 10 candidates ranked by centipawn delta, with PV preview.
+- **Move explainer** — Lichess-style win-rate sigmoid + tactical motif detection (fork, pin, discovered check, removal-of-defender, sacrifice). `brilliant` requires top-1 engine choice + sacrifice + win-rate maintained; otherwise top-1 → `best`.
 - **FEN load + history scrubber** — paste any FEN, walk forwards/backwards through the move list, flip board.
+- **LRU cache** in-memory, keyed on `(fen, depth, multipv)` — scrolling back through your move history is instant after the first pass.
 - **Visual hints** — best-move arrow overlay on the board.
 
 ---
 
 ## Demo Flow
 
-1. Start the server (Stockfish boots, queue ready).
-2. Open the client → starting position renders, eval bar at `0.0`.
+1. Open the page → Stockfish WASM loads in a Web Worker (~1–2 s on first visit; cached afterwards).
+2. Starting position renders, eval bar at `0.0`.
 3. Make a move on the board → engine re-evaluates → eval bar swings, top-moves list refreshes.
 4. Click any move in the top-moves list → blue arrow shows the suggestion, explainer opens with rating + reasoning.
 5. Paste a FEN → board jumps to that position; analysis follows.
-6. Step backwards through history → state rewinds; analysis recomputes for the past position.
+6. Step backwards through history → state rewinds; cached evaluations make this instant.
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────┐    HTTP/JSON    ┌──────────────────────┐    UCI/stdio    ┌────────────────┐
-│  React + Vite    │ ──────────────▶ │  Express API server  │ ──────────────▶ │  Stockfish     │
-│  (chess.js,      │ ◀────────────── │  (job queue,         │ ◀────────────── │  child process │
-│  react-chess     │                 │  explainer logic)    │                 │                │
-│  board)          │                 │                      │                 │                │
-└──────────────────┘                 └──────────────────────┘                 └────────────────┘
+┌───────────────────────────┐                     ┌──────────────────────────────┐
+│  React UI (main thread)   │ ───── postMessage ─▶│  Stockfish WASM (Worker)     │
+│  Board.jsx → analysis.js  │ ◀──── postMessage ──│  stockfish-18-lite-single    │
+│  - chess.js (rules)       │                     │  - UCI protocol              │
+│  - explainer.js (motifs)  │                     │  - depth-12/14 search        │
+│  - LRU cache              │                     │                              │
+└───────────────────────────┘                     └──────────────────────────────┘
 ```
 
-- The **client** holds game state (current FEN, history index, board orientation) and delegates *all* engine work to the server via REST.
-- The **server** owns a single Stockfish process and serializes evaluation requests through an in-memory job queue, so requests never collide on the engine's stdin/stdout.
-- The **explainer** is a server-side module that combines the engine's evaluation delta with hand-coded heuristics (piece-square tables, mobility scoring, tactical motifs) to produce human-readable verdicts.
+Everything happens in the browser. The Worker runs the Stockfish engine; the main thread orchestrates analysis, runs the move explainer, and renders the board. There is no server in the request path.
 
 ---
 
 ## Tech Stack
 
-### Client
-| Layer            | Choice                                            |
-| ---------------- | ------------------------------------------------- |
-| Framework        | React 19                                          |
-| Build tool       | Vite 7                                            |
-| Styling          | Tailwind CSS 3 + inline styles                    |
-| Chess logic      | [`chess.js`](https://github.com/jhlywa/chess.js) 1.4 |
+| Layer            | Choice                                                            |
+| ---------------- | ----------------------------------------------------------------- |
+| Framework        | React 19                                                          |
+| Build tool       | Vite 7                                                            |
+| Styling          | Tailwind CSS 3 + inline styles                                    |
+| Chess logic      | [`chess.js`](https://github.com/jhlywa/chess.js) 1.4              |
 | Board            | [`react-chessboard`](https://github.com/Clariity/react-chessboard) 4.6 |
-| HTTP             | Axios                                             |
-| Icons            | `lucide-react`                                    |
-| Lint             | ESLint 9 (flat config)                            |
+| Engine           | [`stockfish`](https://www.npmjs.com/package/stockfish) 18 (lite, single-threaded WASM) |
+| Icons            | `lucide-react`                                                    |
+| Lint             | ESLint 9 (flat config)                                            |
 
-### Server
-| Layer            | Choice                                            |
-| ---------------- | ------------------------------------------------- |
-| Runtime          | Node.js (≥ 18 recommended)                        |
-| Framework        | Express 5                                         |
-| Engine           | Stockfish (any UCI-compatible build)              |
-| Engine bridge    | `child_process.spawn` + custom UCI parser         |
-| Chess logic      | `chess.js` (same as client, for parity)           |
-| Misc             | `cors`, `dotenv`                                  |
-
-### What is **not** in the stack (yet)
-- No database, ORM, cache, or persistence layer.
-- No WebSocket / Socket.IO — all communication is request/response.
-- No authentication, sessions, or user model.
-- No test runner on either side.
+What is **not** in the stack:
+- No backend, no database, no API, no auth, no WebSockets.
+- No SharedArrayBuffer / COOP-COEP requirements (we use the single-threaded WASM build).
 
 ---
 
@@ -104,308 +91,233 @@ This is **not** a chess server (you cannot play against another human or against
 
 ```
 .
-├── client/                       # React + Vite frontend
+├── client/                              # The deployed app
 │   ├── public/
+│   │   └── stockfish/
+│   │       ├── stockfish-18-lite-single.js     # Web Worker entry
+│   │       └── stockfish-18-lite-single.wasm   # ~7 MB engine binary
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Board.jsx           # Board, history, FEN input, top-moves wiring
-│   │   │   ├── EvalBar.jsx         # Vertical eval bar with mate handling
-│   │   │   ├── TopMoves.jsx        # Candidate move list (currently unused)
-│   │   │   └── MoveExplanation.jsx # Move verdict panel (currently unused)
+│   │   │   ├── Board.jsx                # Main board, history, FEN input, top-moves wiring
+│   │   │   ├── EvalBar.jsx              # Vertical eval bar
+│   │   │   ├── TopMoves.jsx             # (currently unused — duplicate of inline UI)
+│   │   │   └── MoveExplanation.jsx      # (currently unused)
+│   │   ├── engine/                      # ★ The analysis pipeline lives here
+│   │   │   ├── engine.js                # Stockfish Worker wrapper (UCI, queue, timeout, LRU cache)
+│   │   │   ├── chess.js                 # chess.js helpers (FEN, legal moves, game status)
+│   │   │   ├── explainer.js             # Win-rate sigmoid + tactical motif detection
+│   │   │   └── analysis.js              # Public API: getTopMoves / getBestMove / explainMoveAt
 │   │   ├── App.jsx
-│   │   ├── App.css
-│   │   ├── index.css
 │   │   └── main.jsx
 │   ├── index.html
-│   ├── eslint.config.js
-│   ├── tailwind.config.js
-│   ├── postcss.config.js
 │   ├── vite.config.js
 │   └── package.json
 │
-├── server/                       # Node + Express backend
-│   ├── src/
-│   │   ├── api.js                  # All REST routes
-│   │   ├── chess.js                # Helpers around chess.js
-│   │   ├── engine.js               # Stockfish UCI wrapper + job queue
-│   │   └── explainer.js            # Move classification + heuristics
-│   ├── index.js                    # Entry point (port 3000)
-│   └── package.json
+├── server/                              # ★ Legacy. Not required to run the app.
+│   └── src/
+│       ├── engine.js                    # Native Stockfish wrapper (was: Express + child_process)
+│       ├── chess.js
+│       ├── api.js
+│       └── explainer.js
 │
+├── vercel.json                          # Vercel deploy config
 ├── .gitignore
-└── README.md                     # ← you are here
+└── README.md
 ```
 
 ---
 
 ## Prerequisites
 
-- **Node.js 18+** (Node 20 LTS recommended).
-- **Stockfish** binary on your `$PATH`, **or** a path supplied via the `STOCKFISH_PATH` env var.
-  - macOS: `brew install stockfish`
-  - Debian/Ubuntu: `sudo apt-get install stockfish`
-  - Windows: download from [stockfishchess.org/download](https://stockfishchess.org/download/) and either add to `PATH` or set `STOCKFISH_PATH`.
-- A modern browser (Chromium/Firefox/Safari current).
+- **Node.js 20+** (Node 20.19 / 22.12 recommended for Vite 7).
+- A modern browser with WebAssembly support (Chromium, Firefox, Safari, Edge — anything from the last ~5 years).
+
+That's it. **No Stockfish system binary, no server, no Docker.**
 
 ---
 
 ## Installation
 
 ```bash
-# clone
 git clone <your-fork-url> chess_project
-cd chess_project
-
-# server deps
-cd server
-npm install
-
-# client deps
-cd ../client
+cd chess_project/client
 npm install
 ```
 
-> **Note on package managers**: the server currently has both `package-lock.json` and `yarn.lock` checked in. Pick one (npm *or* yarn) and delete the other to avoid drift. See [Known Gaps and Problems](#known-gaps-and-problems).
+`npm install` will download the `stockfish` package; the WASM file used at runtime is already checked into `client/public/stockfish/` (it's content-addressable and ~7 MB).
 
 ---
 
 ## Running Locally
 
-You need **two** terminals — one for the server, one for the client.
-
-**Terminal 1 — start the engine + API:**
-
-```bash
-cd server
-node index.js
-# → "Stockfish engine ready"
-# → "Server listening on http://localhost:3000"
-```
-
-**Terminal 2 — start the Vite dev server:**
-
 ```bash
 cd client
-npm run dev
-# → Vite dev server on http://localhost:5173
+npm run dev          # Vite dev server, usually http://localhost:5173
 ```
 
-Open <http://localhost:5173> in your browser.
+Open the URL Vite prints. First load fetches the WASM (~7 MB, gzipped to ~3 MB on the wire). Subsequent loads use the browser's HTTP cache.
 
 ### Production build
 
 ```bash
-cd client
-npm run build      # outputs to client/dist/
-npm run preview    # serves the built bundle locally
+npm run build        # outputs to client/dist/  (~7.3 MB total: WASM dominates)
+npm run preview      # serve the built bundle locally
 ```
 
-The server has no build step — run it directly with `node index.js` (or wrap it in `pm2`, `systemd`, Docker, etc. — none of which is provided yet).
+---
+
+## Deploy to Vercel
+
+The repo ships with a [`vercel.json`](./vercel.json) that handles the monorepo layout:
+
+- `installCommand`: `cd client && npm ci`
+- `buildCommand`: `cd client && npm run build`
+- `outputDirectory`: `client/dist`
+- Long-lived `Cache-Control` headers on `/stockfish/*` and `/assets/*` (both are content-addressable).
+
+### One-shot deploy
+
+```bash
+npm i -g vercel        # if you don't have it
+vercel                 # follow the prompts; pick the right team/project name
+vercel --prod          # promote to production
+```
+
+### Or via the Vercel dashboard
+
+1. **Import** the GitHub repo at <https://vercel.com/new>.
+2. Leave **Root Directory** at the repo root (`vercel.json` handles the rest).
+3. Click **Deploy**.
+
+That's the entire pipeline. No environment variables, no add-ons, no backend service. The deployed URL serves the static SPA and the WASM, and Stockfish runs in every visitor's browser.
+
+### Other static hosts
+
+The same pattern works on Netlify, Cloudflare Pages, GitHub Pages, S3+CloudFront, or any static host — point them at `client/dist` after running `npm run build`. You may want to set `Cache-Control: public, max-age=31536000, immutable` on `/stockfish/*` and `/assets/*` to match the Vercel headers.
 
 ---
 
-## Configuration
+## Public API (`client/src/engine/`)
 
-| Variable                | Where    | Default       | Purpose                                                  |
-| ----------------------- | -------- | ------------- | -------------------------------------------------------- |
-| `STOCKFISH_PATH`        | server   | `stockfish`   | Path to the Stockfish binary.                            |
-| `PORT`                  | server   | `3000`        | HTTP port the API listens on.                            |
-| `CORS_ORIGIN`           | server   | *(any)*       | Restrict CORS (e.g. `https://chess.example.com`).        |
-| `STOCKFISH_POOL_SIZE`   | server   | `1`           | Number of Stockfish processes for parallel analysis.     |
-| `STOCKFISH_TIMEOUT_MS`  | server   | `15000`       | Hard timeout per engine job (kills the search).          |
-| `STOCKFISH_CACHE_SIZE`  | server   | `1000`        | Max entries in the engine LRU cache (keyed by FEN+depth).|
-| API base URL            | client   | `http://localhost:3000/api` | Hard-coded in [`Board.jsx`](client/src/components/Board.jsx). |
+`client/src/engine/analysis.js` is the orchestration layer the UI talks to. The shapes match what the (legacy) server endpoints used to return, so the rest of the app didn't have to change much.
 
-`dotenv` is loaded at server startup, so dropping a `.env` file in `server/` works. There is no `.env.example` shipped yet.
+```js
+import {
+  getTopMoves,
+  getBestMove,
+  explainMoveAt,
+} from './engine/analysis';
 
----
+// Top N candidate moves for a position (1 ≤ N ≤ 10)
+const r = await getTopMoves(fen, 10);
+// → { fen, eval_cp, mate, moves: [{ rank, move, san, eval_cp, eval_pawns, pv, isMate, mateIn }, ...] }
 
-## API Reference
+// Best move plus principal variation
+const r = await getBestMove(fen);
+// → { fen, bestMove, san, from, to, eval_cp, mate, pv: [san, ...] }
 
-All endpoints are `POST` and accept/return JSON. Base path: `/api`. There is also a `GET /health` that returns `{ ok: true }`.
+// Explain a move you just made
+const r = await explainMoveAt(fen, 'e2e4');
+// → { san, summary, details, quality, factors, motifs, evalBefore, evalAfter, evalDelta, winRateDelta, isTopMove }
+```
 
-| Endpoint                | Body                                | Returns                                                                 |
-| ----------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
-| `POST /api/eval`        | `{ fen }`                           | `{ eval_cp, mate, status }` — White-POV centipawn eval, mate-in-N (or `null`), and game-state flags. |
-| `POST /api/best-move`   | `{ fen }`                           | `{ bestMove, san, from, to, eval_cp, mate, pv[] }`                      |
-| `POST /api/top-moves`   | `{ fen, count? }` *(count: 1–10)*   | `{ eval_cp, mate, moves: [{ rank, move, san, eval_cp, eval_pawns, pv, isMate, mateIn }] }` |
-| `POST /api/explain-move`| `{ fen, move }` *(move in UCI, e.g. `e2e4` or `e7e8q`)* | `{ san, summary, details, quality, factors, motifs, evalBefore, evalAfter, evalDelta, winRateDelta, isTopMove }` |
-| `POST /api/piece-values`| `{ fen }`                           | `{ eval_cp, pieces: [{ square, type, color, delta_cp, delta_pawns }] }` |
-| `POST /api/heatmap/current`  | `{ fen }`                      | Grid of per-square values for both sides.                               |
-| `POST /api/heatmap/mobility` | `{ fen, square }`              | Grid of move evaluations for the piece on `square` (de-duped destinations). |
-| `POST /api/heatmap/preview`  | `{ fen, from, to }`            | Piece-value grid for the position **after** the proposed move.          |
+`quality` is one of: `brilliant | great | best | good | neutral | inaccuracy | mistake | blunder`.
+`motifs` is a subset of: `capture | check | checkmate | stalemate | fork | pin | discovered-check | removal-of-defender | sacrifice | castling-kingside | castling-queenside | en-passant | promotion | threefold-repetition | fifty-move-rule | insufficient-material`.
 
-**Errors**:
-- `400` — invalid input (missing/malformed FEN, invalid square, out-of-range `count`).
-- `504` — Stockfish search timed out (controlled by `STOCKFISH_TIMEOUT_MS`).
-- `500` — internal/engine failure with a `message` field.
-
-**Quality values returned by `/api/explain-move`**: `brilliant`, `great`, `best`, `good`, `neutral`, `inaccuracy`, `mistake`, `blunder`. **Motifs** is an array drawn from: `capture`, `check`, `checkmate`, `stalemate`, `fork`, `pin`, `discovered-check`, `removal-of-defender`, `sacrifice`, `castling-kingside`, `castling-queenside`, `en-passant`, `promotion`, `threefold-repetition`, `fifty-move-rule`, `insufficient-material`.
+For lower-level access, `client/src/engine/engine.js` exposes `evaluate(fen, depth)`, `analyzeMultiPV(fen, n, depth)`, and `getBestMove(fen, depth)` directly on the Stockfish wrapper.
 
 ---
 
 ## How the Analysis Pipeline Works
 
-### 1. The Stockfish wrapper (`server/src/engine.js`)
-A pool of Stockfish processes is spawned at server boot (size controlled by `STOCKFISH_POOL_SIZE`). Each worker maintains a FIFO job queue so requests never collide on the engine's stdin. The wrapper:
-- Buffers stdout across chunk boundaries so `info` / `bestmove` lines are always parsed whole.
+### 1. Stockfish WASM Worker (`client/src/engine/engine.js`)
+A single Stockfish process runs in a Web Worker. The wrapper:
+- Buffers `postMessage` lines so partial UCI responses are never lost.
 - Performs a `uci` → `isready` → `readyok` handshake before accepting jobs.
-- Enforces a per-job timeout (`STOCKFISH_TIMEOUT_MS`) — on hit, sends UCI `stop` and rejects, so the queue can't wedge.
-- Returns `{ cp, mate }` from `evaluate()` so callers can distinguish "+9.99 pawns" from "mate in 3."
-- Yields control between jobs via `setImmediate` to avoid recursive stack growth under burst.
-- An LRU cache keyed on `(fen, depth, multipv)` short-circuits repeated analysis.
+- Enforces a 15-second timeout per job (sends UCI `stop` then rejects, so the queue can't wedge).
+- Returns `{ cp, mate }` from `evaluate()` so callers can distinguish `+9.99` pawns from "mate in 3."
+- Caches results in an LRU keyed on `(fen, depth, multipv)`.
 
-### 2. Top moves (`/api/top-moves`)
-Sets `setoption name MultiPV value N`, runs a single search, and harvests the deepest `info` line per `multipv` slot. Each candidate is converted to SAN and surfaces both `cp` and `mate` fields.
+### 2. Top moves
+Sets `setoption name MultiPV value N`, runs a single search, and harvests the deepest `info` line per `multipv` slot.
 
-### 3. The explainer (`server/src/explainer.js`)
-Classifies a move via:
-- **Win-rate sigmoid** — `winRate(cp) = 100 / (1 + e^(-cp/300))`, the same shape Lichess uses. Thresholds operate on the *win-rate delta* from the mover's perspective, so a 30cp drop near equality is treated very differently from a 30cp drop in a +5 pawn position.
-- **Engine top-1 / top-2 reference** — fetched alongside the eval. The player's move is compared against the engine's top choice; matching the top choice plus a real material sacrifice (the moving piece is now hanging for ≥ 200cp net) upgrades the verdict to `brilliant`.
-- **Tactical motif detection** — fork (≥ 2 enemy pieces attacked with king or higher-value targets), pin (sliding piece pins a less-valuable piece in front of a more-valuable one), discovered check (king is in check by a piece that didn't move), removal-of-defender (captured piece was the only defender of a friendly piece that's now hanging).
+### 3. The explainer (`client/src/engine/explainer.js`)
+- **Win-rate sigmoid** — `winRate(cp) = 100 / (1 + e^(-cp/300))`, the same shape Lichess uses. Thresholds operate on the *win-rate delta* from the mover's perspective.
+- **Engine top-1 / top-2 reference** — fetched alongside the eval. The player's move is compared against the engine's top choice; matching it plus a real material sacrifice (the moving piece is now hanging for ≥ 200 cp net) upgrades the verdict to `brilliant`.
+- **Tactical motif detection** — fork, pin, discovered check, removal-of-defender, sacrifice.
 - **Terminal-state shortcuts** — `chessAfter.isCheckmate()` returns immediately with quality `brilliant`; `isStalemate()` flags accidental stalemates as a blunder when the side was previously winning.
-- **Positional factors** — PST-based activity, center occupation, development (gated to `moveNumber ≤ 12`), and king-attack proximity. All `value_pawns` units are pawns for consistency.
-
-### 4. Heatmaps
-Three flavors:
-- **Current** — for each non-king piece, hypothetically remove it and re-evaluate; the delta is its "value" in this exact position.
-- **Mobility** — for each legal target square of a chosen piece, evaluate the resulting position and grade it. Promotion variants are de-duped to a single destination so the search runs once per square instead of four times.
-- **Preview** — apply a candidate move, then run the *current* heatmap on the resulting position.
-
-The engine cache absorbs repeated lookups (e.g. scrolling history through the same positions), making heatmap interactions feel near-instant after the first pass.
-
----
-
-## Development
-
-### Lint
-```bash
-cd client && npm run lint
-```
-The server has no lint config.
-
-### Tests
-There are none. `server/package.json` has the placeholder `"test": "echo \"Error: no test specified\" && exit 1"`. Adding tests is one of the highest-leverage next steps — see [Roadmap](#roadmap--future-work).
-
-### Debugging Stockfish
-If the engine seems unresponsive, log every UCI line at the wrapper layer — the boundary between Node and the child process is the most common source of bugs. Watch out for partial reads on stdout; lines must be split on `\n` and accumulated until terminator events (`bestmove`, `readyok`).
+- **Positional factors** — PST-based activity, center occupation, development (gated to `moveNumber ≤ 12`), and king-attack proximity.
 
 ---
 
 ## Known Gaps and Problems
 
-The server backend has been hardened recently (see [Recent Server Overhaul](#recent-server-overhaul)). Most remaining issues are on the client and around polish/testing.
+### Performance
+- **WASM Stockfish runs at ~30-50% of native speed.** Single-threaded by choice — using the multi-threaded build would require setting Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers and accepting the deployment complexity. At depth 12 the single-threaded build still answers in well under a second on a modern laptop.
+- **First-load WASM download is ~7 MB** (about 3 MB gzipped on the wire). Aggressive `Cache-Control` minimises this on repeat visits.
 
-### Client (where most of the remaining work lives)
-- **API URL is hard-coded** in [`Board.jsx`](client/src/components/Board.jsx). Production deployment requires a code change. Should be `import.meta.env.VITE_API_URL` with a fallback.
-- **`alert()` for invalid FEN.** Browser alert for FEN errors. Inline error states would be friendlier and testable.
-- **Auto-promotion to queen.** The server now accepts a `promotion` parameter in moves, but the client UI never offers under-promotion (knight/rook/bishop).
+### Client polish
+- **API URL** is no longer used (axios is dead code in `package.json` — should be removed).
+- **`alert()` for invalid FEN.** Inline error UI would be friendlier and testable.
+- **Auto-promotion to queen.** The engine and explainer support under-promotion, but the UI never offers a knight/rook/bishop choice.
 - **Fixed 520 × 520 board.** No responsive layout, unusable on mobile.
 - **Tailwind is configured but barely used.** Either commit to Tailwind or drop the dev dependency.
-- **`TopMoves.jsx` and `MoveExplanation.jsx` are unused.** The equivalent UI is inlined into `Board.jsx`. Delete them or refactor `Board.jsx` to use them.
-- **No loading or error states** while Stockfish initializes (~1s on cold start) or while a long search runs.
-- **No accessibility pass** — no ARIA labels, no keyboard navigation, color-only eval indicators.
-- **Game-status flags from `/api/eval`** (checkmate / stalemate / threefold / 50-move-rule / insufficient material) are now returned by the server but not surfaced in the UI.
-- **New `quality` values** (`brilliant`, `best`, `great`) and `motifs` (fork, pin, discovered-check, sacrifice, …) returned by `/api/explain-move` are not rendered yet.
+- **`TopMoves.jsx` and `MoveExplanation.jsx` are unused.** The equivalent UI is inlined into `Board.jsx`.
+- **No accessibility pass.**
+- **Game-status flags** (checkmate / stalemate / threefold / 50-move / insufficient material) are surfaced by the explainer but not rendered in dedicated UI.
 
-### Server (smaller items remaining)
-- **No rate limiting.** A single client could still pin all Stockfish workers — though the per-job timeout (`STOCKFISH_TIMEOUT_MS`) caps individual damage.
-- **Bad-FEN robustness on the engine itself.** Validation now happens at the API edge, but if Stockfish ever crashes mid-job, the worker isn't auto-restarted (the pool member becomes unusable). A worker-respawn loop would help long uptimes.
-- **`removePiece` can produce illegal positions** (e.g. removing a pinned defender leaves the side-to-move's king in check). Stockfish will still evaluate but the result is meaningless. Used only by the heatmap endpoints.
+### Chess-specific gaps
+- **No PGN import/export.**
+- **No opening book or endgame tablebase** (Stockfish does the work even for trivial positions).
+- **No play-vs-engine / multiplayer / persistence.** This is an analysis cockpit, not a game server.
+- **Skewer detection** is approximated by the pin detector; a dedicated motif would be cleaner.
 
 ### Cross-cutting
-- **No tests.** Engine wrapper, explainer (now with tactical motifs), and API contract are all untested. Snapshot tests for the explainer on known positions would be the highest-leverage place to start.
-- **No PGN import/export.** You can paste a FEN, but you can't paste a full PGN.
-- **No opening book or endgame tablebase.** Stockfish does the work even for trivial positions.
-- **No draw-offer / resign / play-mode flow** — the project is still analysis-only.
-- **`server/node_modules/` history still in git.** The current `HEAD` is clean (untracked + gitignored), but the deletion isn't committed yet — `git status` shows ~600 staged removals waiting for a commit.
-
----
-
-## Recent Server Overhaul
-
-The server modules (`engine.js`, `chess.js`, `api.js`, `explainer.js`, `index.js`) were rewritten recently. Highlights:
-
-**Reliability**
-- stdout buffering across chunk boundaries (no more silently dropped `info` lines).
-- `uci` → `isready` → `readyok` handshake before accepting jobs.
-- Per-job timeout that sends UCI `stop` and rejects, so the queue never wedges.
-- `setImmediate`-based queue draining (no recursive stack growth).
-- Graceful `SIGINT` / `SIGTERM` handlers that close the HTTP server and `quit` Stockfish cleanly.
-- `PORT` and `CORS_ORIGIN` env vars are now honored.
-
-**Performance**
-- LRU cache (size `STOCKFISH_CACHE_SIZE`, default 1000) keyed on `(fen, depth, multipv)`. Heatmap re-renders on the same position are now near-instant.
-- Stockfish process pool (`STOCKFISH_POOL_SIZE`, default 1) with least-busy dispatch — set to 4 for ~4× faster heatmaps on multi-core hardware.
-- Mobility heatmap de-dupes promotion squares so a pawn with 4 promotion variants triggers 1 search instead of 4.
-
-**API correctness**
-- `validateFen` middleware on every endpoint. Bad FEN now returns `400`, never reaches the engine.
-- `count` for `/api/top-moves` validated as an integer in `[1, 10]` (returns `400` otherwise instead of silently capping).
-- `/api/eval` now returns `{ eval_cp, mate, status }` — mate-in-N is no longer flattened to ±9999cp, and game-state flags are exposed.
-- `piece-values` and `heatmap/current` now share a single `computePieceValues` helper.
-- `504` returned on engine timeout (with message), `400` on bad input, `500` only on truly unexpected failures.
-
-**Explainer rewrite**
-- Win-rate sigmoid (`100 / (1 + e^(-cp/300))`) for quality classification — same shape Lichess uses. A 30cp drop near equality is now treated very differently from the same drop at +5 pawns.
-- Real terminal-state handling: `isCheckmate()` returns `quality: 'brilliant'` with a clear summary; `isStalemate()` flags accidental stalemates as a blunder when previously winning.
-- Castling detected via `chess.js` move flags, not SAN string match (no more breakage on `O-O+` / `O-O#`).
-- Tactical motif detection: **fork**, **pin**, **discovered check**, **removal of defender**, **sacrifice**.
-- "Brilliant" upgrade requires (a) move equals engine top choice, (b) sacrifice detected, (c) win-rate doesn't drop. Otherwise an engine-top move gets `quality: 'best'`.
-- "Development" only fires through move 12 — `Nf3` on move 30 no longer gets credit for "developing".
-- All factor `value_pawns` are in pawns (consistent units).
-- Dead `analyzePosition` removed.
+- **No tests.** The explainer's tactical motif logic in particular has enough heuristics that snapshot tests on hand-picked positions would be the highest-leverage place to start.
 
 ---
 
 ## Roadmap / Future Work
 
-Grouped by likely effort and value. Most server-side quick wins from the previous version of this list have been completed (see [Recent Server Overhaul](#recent-server-overhaul)).
-
-### Quick wins (a day or less)
-- [ ] Move the API base URL into a Vite env var (`VITE_API_URL`) with a localhost fallback.
+### Quick wins
+- [ ] Remove unused `axios` dependency from `client/package.json`.
 - [ ] Replace `alert()` for invalid FEN with inline error UI.
-- [ ] Add a `.env.example` documenting `STOCKFISH_PATH`, `PORT`, `CORS_ORIGIN`, `STOCKFISH_POOL_SIZE`, `STOCKFISH_TIMEOUT_MS`, `STOCKFISH_CACHE_SIZE`.
-- [ ] Surface server-returned `status` (checkmate/stalemate/threefold/50-move/insufficient material) in the UI.
-- [ ] Render the new `quality` values (`brilliant`, `best`, `great`) and `motifs` array on the move-explanation panel.
-- [ ] Delete or wire up `TopMoves.jsx` and `MoveExplanation.jsx`.
-- [ ] Commit the staged `server/node_modules/` deletion so `git log` stops carrying ~600 dead files.
+- [ ] Render the explainer's `motifs[]` array as chips on the move-explanation panel (factors are already rendered).
+- [ ] Surface game-end states (checkmate / stalemate / threefold / 50-move / insufficient material) in the UI.
+- [ ] Delete or wire up `TopMoves.jsx` / `MoveExplanation.jsx`.
 
 ### Medium-effort improvements
-- [ ] **Responsive board.** Switch the chessboard width to a percentage / `vmin`-based layout.
-- [ ] **Under-promotion UI.** Modal for choosing promotion piece on the 8th/1st rank (the server already accepts the `promotion` parameter).
-- [ ] **PGN import/export.** Trivial with `chess.js` — round-trip the move list.
-- [ ] **Engine controls UI.** Expose depth, MultiPV, and pool size in a settings panel.
-- [ ] **First test suite.** Snapshot tests for the explainer (each motif on a hand-picked position), contract tests for the API, and an integration test that boots Stockfish and runs a known mate-in-2.
-- [ ] **Linter for the server** (ESLint + minimal config).
-- [ ] **Worker auto-restart.** If a Stockfish process crashes, respawn it instead of leaving a dead pool member.
-- [ ] **Rate limiting** on the API (e.g. `express-rate-limit`).
-- [ ] **Dockerfile + docker-compose** so the engine, API, and client come up with one command.
-- [ ] **Accessibility pass** — ARIA labels, keyboard piece movement, eval bar text alternative.
+- [ ] **Responsive board** (percentage / `vmin`-based layout).
+- [ ] **Under-promotion modal.** Ask the user which piece on pawn promotion.
+- [ ] **PGN import/export.** Trivial with `chess.js`.
+- [ ] **Engine controls UI.** Expose depth + MultiPV in a settings panel.
+- [ ] **First test suite.** Snapshot tests for the explainer (each motif on a hand-picked position).
+- [ ] **Multi-threaded Stockfish.** Switch to `stockfish-18-lite.js` (multi-threaded build) and add COOP/COEP headers in `vercel.json` for ~2-4× search speedup.
+- [ ] **Loading UX.** Show a small "Loading engine…" indicator on first visit while the WASM downloads.
+- [ ] **Service worker / PWA install.** Cache the WASM offline-first; the app already works offline once loaded.
 
 ### Bigger directions
-- [ ] **Play-vs-engine mode.** The engine wrapper is already there; you mostly need a "computer move" loop, a difficulty slider (Stockfish skill level / `Elo`), and a clock UI.
-- [ ] **Multiplayer over WebSocket.** Express → Socket.IO or `ws`. Match rooms, move broadcasting, optional spectators.
-- [ ] **Persistence.** Postgres or SQLite for users, games, and saved analyses. Probably needs auth too.
-- [ ] **Auth.** Even a simple session/JWT layer once persistence exists.
-- [ ] **Game review mode.** Walk a full PGN, classify each move using the explainer, surface the worst blunder with the engine's preferred line.
-- [ ] **Opening explorer.** Polyglot book or Lichess masters DB lookups so opening moves don't waste engine time.
-- [ ] **Endgame tablebase.** Syzygy 6-piece for perfect play in K+P+P-style endings.
-- [ ] **Better tactical detection.** Real Static Exchange Evaluation (SEE) for sacrifice scoring; skewer detection (currently lumped into pins); zwischenzug / intermezzo recognition.
-- [ ] **Cloud-hosted demo.** Fly.io / Render / Railway-style deploy, with origin-restricted CORS.
+- [ ] **Play-vs-engine mode.** Use Stockfish's `setoption name Skill Level` to dial difficulty; add a clock UI.
+- [ ] **Game review mode.** Walk a full PGN, run the explainer on every move, surface the worst blunders.
+- [ ] **Opening explorer.** Polyglot book lookups so opening moves don't waste engine time.
+- [ ] **Endgame tablebase.** Syzygy 6-piece via a remote service (or WASM tablebase if available).
+- [ ] **Multiplayer.** Would require a backend — at that point the legacy `server/` code becomes useful again.
+- [ ] **Better tactical detection.** Real Static Exchange Evaluation (SEE) for sacrifice scoring; explicit skewer / zwischenzug recognition.
 
 ---
 
 ## Contributing
 
-This is a personal project right now, so there is no formal contribution process. If you fork it:
+This is a personal project for now. If you fork it:
 
 1. Open an issue describing the change you want to make.
-2. Keep PRs focused — one fix or one feature per branch.
-3. If you touch the explainer's heuristics, please add a snapshot test (once the test harness exists) so future contributors don't accidentally invalidate your tuning.
+2. Keep PRs focused — one fix or feature per branch.
+3. If you touch the explainer's heuristics, please add a test (once the test harness exists) so future contributors don't accidentally invalidate your tuning.
 
 ---
 
 ## License
 
-No license file is currently included. Until one is added, treat the code as **all rights reserved** by the original author. If you want others to use, fork, or contribute, add an `MIT` or `Apache-2.0` `LICENSE` file at the repository root.
+No license file is currently included. Until one is added, treat the code as **all rights reserved** by the original author.
+
+The bundled Stockfish WASM is licensed under **GPL-3.0** ([Stockfish](https://github.com/official-stockfish/Stockfish), [stockfish.js](https://github.com/nmrugg/stockfish.js)).
