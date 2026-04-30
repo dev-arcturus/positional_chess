@@ -249,11 +249,16 @@ delta_cp(S)  = baseEval − evalWithout   if C is white
 delta_cp(S)  = clamp(delta_cp(S), −1500, +1500)
 ```
 
-That `clamp` is critical: removing a piece can expose a forced mate, in
-which case the engine returns a mate-encoded score around ±100,000 cp and
-the naïve subtraction blows up to ≈ ±1000 pawns. Capping at ±15 pawns is
-the difference between "this bishop is worth +997.5" (useless) and
-"this bishop is essential" (truthful).
+Two corrections protect the math from mate-encoded scores (the engine
+returns ≈ ±100,000 cp for "mate in N"):
+
+1. `ownerValue(eval)` translates either side of the eval to a sane
+   owner-relative value. Mate scores fold into ±1000 (owner mates / owner
+   gets mated), cp values clamp at ±1500. This stops the naïve subtraction
+   from blowing up to ≈ ±1000 pawns.
+2. The final `delta_cp` is clamped to **±500 cp** (5 pawns). 5 is enough
+   to convey "very important" without making every piece around a mating
+   attack read identically as `+15.0` (which conveys no information).
 
 **Delta during drag** is the same thing for the post-move position: when
 you hover over a legal destination, every piece's `delta_cp` is recomputed
@@ -492,20 +497,32 @@ the move?" answer without having to read the analysis panel.
 
 ## King safety (0–9 overlay on each king)
 
-Pure-FEN heuristic, no engine calls:
+Pure-FEN heuristic, no engine calls. Components:
+
+- **Pawn shield** (max 6) — pawns directly in front of the king on the
+  three files `[kf-1, kf, kf+1]`. A pawn one rank ahead scores 2; two
+  ranks ahead scores 1. (So `f2 g2 h2` for a kingside-castled white
+  king = 2+2+2 = 6.)
+- **Open files near king** — files in `{kf-1, kf, kf+1}` with no
+  friendly pawn anywhere. Each one deducts 1.5 points.
+- **Attacker weight** — enemy pieces attacking any of the 9 squares in
+  the king's 3×3 zone. Pieces are weighted `p:1, n:2, b:2, r:3, q:4`,
+  with each attack instance deducting 0.5 points.
+- **Castled bonus** — `+1.5` if the king is on the g- or c-file at the
+  back rank.
+- **Central exposure penalty** — `-3` if the king is on file 2–5 and
+  rank 2–5 (out in the middle of the board).
 
 ```
-raw = (friendly pawns within 2 squares of king)
-    − (enemy non-pawn, non-king pieces within 3 squares)
-    − (king is in central files & ranks ? 2 : 0)
-
-score = clamp(raw + 4, 0, 9)
+raw   = shield − 1.5·openFiles − 0.5·attackerWeight
+        + (castled ? 1.5 : 0) − (central ? 3 : 0)
+score = round( (clamp(raw, -12, 8) + 12) / 20 · 9 )
 ```
 
 Rendered as a single digit on each king's square (32 px, heavy black
-stroke + bright fill). 0 = wide-open king, 9 = locked-down safe.
-Color is interpolated from saturated red at 0 through white at 4–5
-through saturated green at 9.
+stroke + bright fill). 0 = wide-open king, 9 = locked-down safe. Color
+interpolated from saturated red at 0 through white near 4–5 through
+saturated green at 9.
 
 ## Material balance + phase
 
@@ -516,6 +533,48 @@ Both are derived from the FEN with no engine calls:
 - **Phase**: `opening` if non-pawn-non-king material is ≥ 30 and move
   number ≤ 12, `endgame` if material ≤ 14, otherwise `middlegame`. Shows
   as an uppercase tag in the header.
+
+## Move classification (Lichess-style)
+
+The classifier matches Lichess's `lila` exactly for the win-rate sigmoid
+and the loss thresholds:
+
+```
+winRate(cp) = 100 / (1 + exp(-0.00368208 · clamp(cp, -1000, +1000)))
+loss        = winRate(bestMoveCp) − winRate(playedMoveCp)   (mover POV, in pp)
+```
+
+Loss thresholds (in win-rate percentage points), Lichess values:
+
+| Loss     | Verdict      |
+| -------- | ------------ |
+| `< 10`   | `good`       |
+| `< 20`   | `inaccuracy` |
+| `< 30`   | `mistake`    |
+| `≥ 30`   | `blunder`    |
+
+On top of the loss ladder we layer three contextual judgments:
+
+- **`brilliant`** — the played move is the engine's top-1 AND it
+  involves a real material sacrifice (cheap-attacker check via SEE)
+  AND the position wasn't already won (`wrBefore < 85`).
+- **`great`** — top-1 with `onlyMoveGap ≥ 10` (the second-best
+  alternative is at least 10 pp worse). Catches "only move that holds".
+- **`missed_mate`** — the engine's top move had a mate score and the
+  played move did not. Surfaces missed forced mates that the loss
+  ladder alone might rate as `good` (because both positions are still
+  100 % winning by win-rate).
+
+Final ladder, in priority order:
+
+```
+brilliant > great > best > missed_mate > {good, inaccuracy, mistake, blunder}
+```
+
+`best` is the consolation for top-1 moves that don't qualify as
+brilliant or great. Anything not top-1 falls through to either
+`missed_mate` (if the engine had a mate that we missed) or the loss
+ladder.
 
 ## Last-move analysis card
 
