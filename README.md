@@ -417,17 +417,34 @@ wrong one.
   the move.
 - `tempo` — composite: develops + (threatens / attacks_king / creates_threat).
 
-### Fallback (when nothing tactical fires)
-The fallback ladder is **never "Quiet X move"**. It picks the most
-specific thing that can be said:
+### Fallback policy: silence over filler
+If we can't say something *non-obvious* about a move, the tagline is
+**empty** and the panel just renders the SAN + eval. Generic phrasing
+like "Repositions the rook to b1" or "Pushes the a-pawn to a4" simply
+restates the move notation — better to stay silent.
 
-1. Activity (mobility delta) — "Activates the knight (now eyes 8 squares)"
-2. Mobility loss — "Repositions the knight" / "Pulls the rook back into a passive role"
-3. Pawn-specific — "Pushes the pawn to the seventh rank" / "Pushes the d-pawn to d4"
-4. Direction toward enemy king — "Brings the rook toward the kingside"
-5. Direction toward center — "Repositions the knight toward the center"
-6. Heavy pieces — "Repositions the rook to e3"
-7. Last resort — "Maneuvers the bishop to f4" (still names the destination)
+The fallback ladder only emits text for two specific cases:
+
+- **Strong activity gain or loss** (≥ 4 squares attacked Δ): "Activates
+  the knight (eyes 9 squares)" / "Pulls the rook back into a passive role"
+- **Pawn pushes that materially do something**: 7th-rank push, or a push
+  that newly attacks an enemy piece on a diagonal
+
+Anything quieter — back-rank shuffles, pawn moves with no immediate
+target — gets no tagline.
+
+### High-signal positional detectors (added this pass)
+- **`prepares_castling_kingside` / `_queenside`** — minor piece moves
+  off the back rank, freeing the path between king and rook on a side
+  where castling rights still exist. Combined with `develops` to
+  produce "Develops the bishop, preparing to castle kingside".
+- **`attacks_pawn`** — the moved piece *newly* attacks an enemy pawn.
+  Surfaces the pawn's weakness when applicable: "Attacks the backward
+  d-pawn", "Attacks the isolated c-pawn".
+- **`eyes_king_zone`** — long-range piece (B/R/Q) whose newly-attacked
+  squares include any of the 3×3 zone around the enemy king. Combined
+  with `develops` to produce "Develops the bishop, eyeing the king's
+  position".
 
 ### Combined phrasing
 Some motif pairs read more naturally combined:
