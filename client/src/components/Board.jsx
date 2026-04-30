@@ -950,12 +950,14 @@ export default function Board() {
         border: '1px solid #27272a'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div>
+          <div style={{ minWidth: '90px' }}>
             <div style={{ fontSize: '10px', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Eval</div>
             <div style={{
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
               fontSize: '20px',
               fontWeight: 'bold',
+              minWidth: '90px',
+              whiteSpace: 'nowrap',
               color: loading || topMovesLoading
                 ? '#71717a'
                 : evalMate !== null
@@ -1111,8 +1113,9 @@ export default function Board() {
 
       {/* Main content */}
       <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-        {/* Eval Bar */}
-        <div style={{ height: '520px' }}>
+        {/* Eval Bar — fixed width so the row doesn't reflow when the
+            eval text width changes ("--" → "+0.36" → "M5" → "1-0"). */}
+        <div style={{ height: '520px', width: '60px', display: 'flex', justifyContent: 'center' }}>
           <EvalBar evalCp={evalCp} mate={evalMate} result={gameResult} loading={topMovesLoading} />
         </div>
 

@@ -50,7 +50,9 @@ export default function EvalBar({ evalCp, mate, result, loading }) {
         color: '#fafafa',
         letterSpacing: '-0.02em',
         minHeight: '16px',
+        minWidth: '50px',
         textAlign: 'center',
+        whiteSpace: 'nowrap',
       }}>
         {label}
       </div>
