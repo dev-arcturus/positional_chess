@@ -1,22 +1,20 @@
 // Comprehensive positional motif detection for the move list.
 //
-// Every detector here is engine-free: pure chess.js + small geometric
-// computations. Aim is correctness ("don't say things that aren't true")
-// over coverage ("describe every nuance"). Each detector is conservative —
-// it would rather miss a motif than fire a wrong one.
+// PRIMARY backend: the Rust/WASM analyzer in ./analyzer-rs.js. It does
+// rigorous bitboard-based detection with proper SEE — pin/skewer
+// require strict value differences, fork/trapped-piece are SEE-aware,
+// hanging is SEE-aware, etc.
 //
-// Architecture: build one Context per move (chessBefore + chessAfter +
-// pre-computed maps), then run all detectors against it. Each detector
-// only does the work that actually applies (e.g. pawn-structure
-// detectors short-circuit if no pawn moved AND no pawn was captured).
+// FALLBACK backend (this file, below): pure-JS chess.js detectors that
+// run when the WASM module hasn't initialised yet (the very first move
+// after page load) or fails. Same output shape so callers don't care.
 //
 // Output:
 //   quickExplain(fen, moveUCI) → { san, motifs[], tagline, fenAfter }
 //   explainPV(startFen, pvUcis, plies) → [{ san, tagline }, …]
-//
-// Motif catalog (~50). See PRIORITY array near the bottom for ranking.
 
 import { Chess } from 'chess.js';
+import { analyzeMove, analyzePv, composeTagline, isReady } from './analyzer-rs.js';
 
 const PIECE_VALUE = { p: 100, n: 300, b: 320, r: 500, q: 900, k: 20_000 };
 const PIECE_NAME  = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
@@ -180,6 +178,13 @@ function isOutpost(chess, square, piece) {
   return (piece.color === 'w' ? rank >= 4 : rank <= 3);
 }
 
+// Bucketed value for pin/skewer reasoning. Knight ≡ bishop here so a real
+// pin requires a *strictly heavier* piece behind: rook (5) or queen (9)
+// behind a minor (3), queen behind a rook, king (100) behind anything.
+// Using raw centipawn values caused "knight pinned to bishop" to fire
+// because bishop (320) > knight (300).
+const PIN_VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+
 // ── Tactical helpers ────────────────────────────────────────────────────────
 function detectPin(chessAfter, fromSq, movingPiece) {
   if (!['b', 'r', 'q'].includes(movingPiece.type)) return null;
@@ -205,7 +210,8 @@ function detectPin(chessAfter, fromSq, movingPiece) {
         break;
       }
     }
-    if (first && second && (PIECE_VALUE[second.type] || 0) > (PIECE_VALUE[first.type] || 0)) {
+    // Rear piece must be STRICTLY heavier on the bucketed scale.
+    if (first && second && (PIN_VALUE[second.type] || 0) > (PIN_VALUE[first.type] || 0)) {
       return { pinned: first.type, behind: second.type };
     }
   }
@@ -235,7 +241,8 @@ function detectSkewer(chessAfter, fromSq, movingPiece) {
         break;
       }
     }
-    if (first && second && (PIECE_VALUE[first.type] || 0) > (PIECE_VALUE[second.type] || 0)) {
+    // Front piece must be STRICTLY heavier on the bucketed scale.
+    if (first && second && (PIN_VALUE[first.type] || 0) > (PIN_VALUE[second.type] || 0)) {
       return { skewered: first.type, behind: second.type };
     }
   }
@@ -610,8 +617,20 @@ function parseMove(fenBefore, moveUCI) {
   };
 }
 
-// ── Main: quickExplain ─────────────────────────────────────────────────────
+// ── Top-level entry: prefers Rust/WASM analyzer when ready ─────────────────
+//
+// `quickExplain` tries the Rust analyzer first; if WASM isn't ready or
+// the call fails, it falls back to the JS implementation below.
 export function quickExplain(fenBefore, moveUCI) {
+  if (isReady()) {
+    const r = analyzeMove(fenBefore, moveUCI);
+    if (r) return composeTagline(r);
+  }
+  return quickExplainJs(fenBefore, moveUCI);
+}
+
+// ── JS fallback (legacy detectors) ─────────────────────────────────────────
+function quickExplainJs(fenBefore, moveUCI) {
   const M = parseMove(fenBefore, moveUCI);
   if (!M) return { san: moveUCI, motifs: [], tagline: '' };
 
@@ -1117,6 +1136,17 @@ export function quickExplain(fenBefore, moveUCI) {
 
 // Run quickExplain on the first N plies of a PV.
 export function explainPV(startFen, pvUcis, plies = 3) {
+  // Fast path: WASM can analyze the whole sequence in one call.
+  if (isReady()) {
+    const arr = analyzePv(startFen, pvUcis.slice(0, plies), plies);
+    if (Array.isArray(arr) && arr.length > 0) {
+      return arr.map(r => {
+        const composed = composeTagline(r);
+        return { san: composed.san, tagline: composed.tagline };
+      });
+    }
+  }
+  // Slow path: per-move JS evaluation.
   let fen = startFen;
   const out = [];
   for (const uci of pvUcis.slice(0, plies)) {

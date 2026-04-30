@@ -1315,11 +1315,21 @@ export default function Board() {
                   {lastMoveAnalysis.san}
                   {!lastMoveAnalysis.loading && getQualitySymbol(lastMoveAnalysis.quality) && (
                     <span style={{
-                      marginLeft: '4px',
-                      color: getQualityColor(lastMoveAnalysis.quality),
-                      fontSize: '18px',
+                      marginLeft: '8px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      backgroundColor: getQualityColor(lastMoveAnalysis.quality),
+                      color: '#09090b',
+                      fontSize: '13px',
                       fontWeight: 900,
-                      letterSpacing: '-0.02em',
+                      letterSpacing: '-0.04em',
+                      lineHeight: 1,
+                      verticalAlign: 'middle',
+                      boxShadow: `0 0 0 1px ${getQualityColor(lastMoveAnalysis.quality)}40`,
                     }}>
                       {getQualitySymbol(lastMoveAnalysis.quality)}
                     </span>
