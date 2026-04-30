@@ -28,6 +28,19 @@ import {
 
 const HEATMAP_DEPTH = 10;
 
+// Cap on |delta_cp| when measuring a piece's contextual worth. Removing a
+// piece can expose a mate; the engine then returns a mate-encoded score
+// (≈ ±100,000 cp) and the naive `base − afterRemoval` blows up to ±1000
+// pawns. Cap to a sane ceiling so the heatmap doesn't display nonsense.
+// 1500 cp = 15 pawns; anything bigger means "this piece is essential."
+const MAX_DELTA_CP = 1500;
+
+function clampDelta(cp) {
+  if (cp > MAX_DELTA_CP) return MAX_DELTA_CP;
+  if (cp < -MAX_DELTA_CP) return -MAX_DELTA_CP;
+  return cp;
+}
+
 function normalizeToWhite(score, turn) {
   return turn === 'w' ? score : -score;
 }
@@ -54,9 +67,11 @@ export async function getPieceValues(fen) {
       const evalRes = await engine.evaluate(fenWithoutPiece, HEATMAP_DEPTH);
       const evalWithout = normalizeToWhite(evalRes.cp, turn);
       // Δ from this piece's owner's POV: positive = "this piece helps me"
-      deltaCp = piece.color === 'w'
+      const raw = piece.color === 'w'
         ? baseEvalCp - evalWithout
         : evalWithout - baseEvalCp;
+      // Clamp to prevent mate-encoding (≈100,000 cp) from polluting deltas.
+      deltaCp = clampDelta(raw);
     }
     results.push({
       ...piece,
@@ -96,9 +111,10 @@ export function streamDestinationValues(fen, sourceSquare, onResult) {
         if (cancelled) break;
         const withoutCp = normalizeToWhite(withoutRes.cp, newTurn);
 
-        const valueCp = piece.color === 'w'
+        const rawValue = piece.color === 'w'
           ? baseCp - withoutCp
           : withoutCp - baseCp;
+        const valueCp = clampDelta(rawValue);
         onResult({
           dest,
           value_cp: valueCp,

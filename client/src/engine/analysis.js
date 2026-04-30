@@ -5,6 +5,7 @@
 import engine from './engine';
 import { uciToSan, makeMove, getSideToMove } from './chess';
 import { explainMove } from './explainer';
+import { quickExplain, explainPV } from './taglines';
 
 const TOP_MOVES_DEPTH   = 12;  // panel — interactive, must be snappy
 const BEST_MOVE_DEPTH   = 14;  // hint — one-shot click, can wait a bit
@@ -31,6 +32,11 @@ export async function getTopMoves(fen, count = 10) {
   const result = await engine.analyzeMultiPV(fen, Math.min(count, 10), TOP_MOVES_DEPTH);
   const moves = result.moves.map(m => {
     const evalCp = normalizeToWhite(m.score, turn);
+    // Local, engine-free tagline for the move and the next couple of plies
+    // of its PV. quickExplain is pure chess.js + geometry — fast enough to
+    // run for every top move on every position change.
+    const top = quickExplain(fen, m.move);
+    const pvLine = explainPV(fen, m.pv, 3); // [{san, tagline}, …]
     return {
       rank: m.rank,
       move: m.move,
@@ -40,6 +46,9 @@ export async function getTopMoves(fen, count = 10) {
       pv: m.pv.map(uci => uciToSan(fen, uci)).slice(0, 3).join(' '),
       isMate: m.mate !== null && m.mate !== undefined,
       mateIn: mateToWhite(m.mate, turn),
+      tagline: top.tagline,
+      motifs: top.motifs,
+      pvLine,
     };
   });
   return {
