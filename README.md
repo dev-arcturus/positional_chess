@@ -32,12 +32,15 @@ This is the kind of analysis cockpit you'd find on Lichess, scaled down to a sin
 
 - **Browser-side Stockfish 18 (lite, single-threaded WASM)** — depth 12–14 search, MultiPV up to 10, principal variation extraction. ~7 MB WASM, gzipped on the wire.
 - **No backend** — pure static deploy. Works offline once the WASM has been fetched once.
-- **Eval bar** — clamped to ±10 pawns, mate-aware, updates on every move.
-- **Top moves panel** — best 10 candidates ranked by centipawn delta, with PV preview.
-- **Move explainer** — Lichess-style win-rate sigmoid + tactical motif detection (fork, pin, discovered check, removal-of-defender, sacrifice). `brilliant` requires top-1 engine choice + sacrifice + win-rate maintained; otherwise top-1 → `best`.
-- **FEN load + history scrubber** — paste any FEN, walk forwards/backwards through the move list, flip board.
+- **Hold ⇧ Shift to reveal positional values.** The board stays clean by default; pressing Shift overlays a numeric badge on every piece showing its contextual worth (in pawns), color-interpolated by significance.
+- **Live "what-if" preview during drag.** Hover a piece over a legal destination — every label on the board updates to show how each piece's worth changes if you complete the move. Includes the opponent's pieces.
+- **Hanging-piece warnings.** Any piece whose cheapest attacker is less valuable than the piece itself gets a red inset border, so you never miss a loose piece.
+- **Material balance + phase indicator** in the toolbar — quick read on who's up material and whether it's an opening / middlegame / endgame.
+- **Top moves panel with motif taglines.** Each candidate move comes with a short positional summary ("Develops the knight, threatens the bishop") generated locally without engine calls. Click a move and the next 2 plies of the engine's PV each get their own one-liner too.
+- **Move explainer** — Lichess-style win-rate sigmoid + tactical motif detection. `brilliant` requires top-1 engine choice + real (SEE-based) sacrifice + win-rate maintained.
+- **Click-to-select + drag-and-drop** with Lichess-style legal-move dots and capture rings. Dots also appear underneath a piece while it's being dragged.
+- **FEN load + history scrubber + Random button** with 20 curated plausible positions for demos.
 - **LRU cache** in-memory, keyed on `(fen, depth, multipv)` — scrolling back through your move history is instant after the first pass.
-- **Visual hints** — best-move arrow overlay on the board.
 
 ---
 
@@ -227,6 +230,128 @@ const r = await explainMoveAt(fen, 'e2e4');
 For lower-level access, `client/src/engine/engine.js` exposes `evaluate(fen, depth)`, `analyzeMultiPV(fen, n, depth)`, and `getBestMove(fen, depth)` directly on the Stockfish wrapper.
 
 ---
+
+## How positional values are computed
+
+The headline visualization is the **per-piece pawn-value badge** that
+appears when you hold Shift. The number on each piece is what the engine
+thinks the position would lose if the piece were removed. Concretely, for
+a piece on square *S* belonging to side *C*:
+
+```
+baseEval     = Stockfish.evaluate(fen, depth=10)
+evalWithout  = Stockfish.evaluate(fenWithoutPieceOn(S), depth=10)
+delta_cp(S)  = baseEval − evalWithout   if C is white
+             = evalWithout − baseEval   if C is black
+delta_cp(S)  = clamp(delta_cp(S), −1500, +1500)
+```
+
+That `clamp` is critical: removing a piece can expose a forced mate, in
+which case the engine returns a mate-encoded score around ±100,000 cp and
+the naïve subtraction blows up to ≈ ±1000 pawns. Capping at ±15 pawns is
+the difference between "this bishop is worth +997.5" (useless) and
+"this bishop is essential" (truthful).
+
+**Delta during drag** is the same thing for the post-move position: when
+you hover over a legal destination, every piece's `delta_cp` is recomputed
+on the hypothetical post-move FEN and we show the difference vs. its
+current value, in pawns. ~16 engine evals per hover, cached per FEN.
+
+## Color interpolation (significance-aware)
+
+Both the labels and (formerly) the square tints use a single significance
+curve, but the **scale depends on the piece type** so that a –80 cp drop
+on a rook reads lighter than the same drop on a bishop:
+
+```
+relative   = |delta_cp| / typical_piece_value
+magnitude  = 1 − exp(−relative · calibration)
+color      = lerp(white, sign>0 ? green-500 : red-500, magnitude)
+```
+
+`typical_piece_value` is `{p:100, n:300, b:320, r:500, q:900}`. We use
+`calibration=2` for absolute piece-worth labels and `calibration=3` for
+deltas (small swings on big pieces stay near-white; small swings on small
+pieces saturate fast). Calibration was tuned against the design intent
+"60 cp should read as considerable":
+
+| Piece    | −80 cp  | relative | magnitude (c=3) | result        |
+| -------- | ------- | -------- | --------------- | ------------- |
+| Pawn     | −80     | 0.80     | 0.91            | strong red    |
+| Bishop   | −80     | 0.25     | 0.53            | clear red     |
+| Knight   | −80     | 0.27     | 0.55            | clear red     |
+| Rook     | −80     | 0.16     | 0.38            | light red     |
+| Queen    | −80     | 0.09     | 0.23            | barely tinted |
+
+That matches intuition: an 80 cp drop is small for a queen, big for a pawn.
+
+## Label rendering
+
+- Big (22 px) bold monospace, centered in each square.
+- No drop-shadow. Instead a 2.5 px text-stroke painted **before** the fill,
+  in the **square's own color** (cream `#f0d9b5` for light, brown `#b58863`
+  for dark). The stroke makes the label legible on any tile without
+  fighting with the piece icon underneath.
+- `paint-order: stroke fill` so the colored fill stays clean on top.
+
+## Motif catalog (taglines)
+
+`client/src/engine/taglines.js` runs every top move through `quickExplain`
+— pure chess.js + geometry, no engine calls. Each move gets a short
+tagline composed from up to two of the highest-priority motifs detected:
+
+**Tactical**: `checkmate`, `sacrifice`, `fork`, `pin`, `skewer`,
+`discovered_check`, `removal_of_defender`, `hangs`, `threatens`, `defends`.
+
+**Trades & captures**: `queen_trade`, `piece_trade`, `exchange_sacrifice`,
+`capture`, `en_passant`, `promotion`.
+
+**King**: `castles_kingside`, `castles_queenside`, `connects_rooks`,
+`attacks_king`, `check`.
+
+**Rooks & files**: `doubles_rooks`, `open_file`, `semi_open_file`,
+`rook_seventh`, `battery`.
+
+**Pieces & development**: `develops`, `centralizes`, `outpost`,
+`fianchetto`, `tempo`.
+
+**Pawn play**: `pawn_break`, `pawn_lever`, `passed_pawn`, `pawn_storm`,
+`doubled_pawns_them`, `isolated_pawn`.
+
+**Endgame states**: `stalemate`, `threefold_repetition`, `fifty_move`,
+`insufficient_material`.
+
+Tagline composition picks the top 1–2 motifs by priority and joins them
+with a comma. So a knight move that captures a pawn and attacks the queen
+reads "Captures the pawn, threatens the queen" (capture > threatens in
+priority).
+
+`explainPV` runs `quickExplain` for the first 3 plies of the engine's
+preferred line, building a mini-narrative under the selected move:
+
+```
+1. Nf3   Develops the knight, threatens the bishop
+   Nc6   Develops the knight
+   Bb5   Pins the knight to the king
+```
+
+## Hanging-piece detection
+
+For every non-king piece on the board, we ask chess.js for `attackers()`
+and `defenders()` and apply a cheap-attacker test: if there's any attacker
+worth less than the piece itself, the piece is hanging (cheapest exchange
+loses material). Hanging squares get a red inset `boxShadow` so loose
+pieces are immediately visible.
+
+## Material balance + phase
+
+Both are derived from the FEN with no engine calls:
+
+- **Material delta** = sum of `{p:1, n:3, b:3, r:5, q:9}` for white minus
+  same for black, displayed as a small green/red badge near the eval.
+- **Phase**: `opening` if non-pawn-non-king material is ≥ 30 and move
+  number ≤ 12, `endgame` if material ≤ 14, otherwise `middlegame`. Shows
+  as an uppercase tag in the header.
 
 ## How the Analysis Pipeline Works
 
