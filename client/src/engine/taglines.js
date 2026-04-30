@@ -720,12 +720,12 @@ export function quickExplain(fenBefore, moveUCI) {
   }
 
   // ── Piece-specific positional ───────────────────────────────────────────
-  // Develops: minor piece off the back rank in the opening AND we've never
-  // moved this piece type from this file before. Approximated as just
-  // "from = back rank, move number ≤ 12".
+  // Develops: minor piece off the back rank in the opening. Tracked as a
+  // motif but emits NO phrase by itself — "Develops the X" alone just
+  // restates the SAN. Used only as context for combined phrases.
   if (M.moveNumber <= 12 && ['n','b'].includes(M.movingPiece.type)) {
     const startRank = M.moverColor === 'w' ? '1' : '8';
-    if (M.from[1] === startRank) add('develops', `Develops the ${PIECE_NAME[M.movingPiece.type]}`);
+    if (M.from[1] === startRank) add('develops', null);
   }
 
   // Knight on the rim — usually a bad sign in the opening.
@@ -895,14 +895,7 @@ export function quickExplain(fenBefore, moveUCI) {
   // Prepares castling.
   const castlingSide = detectPreparesCastling(M.chessAfter, M.from, M.movingPiece, M.moverColor);
   if (castlingSide) {
-    if (motifs.includes('develops')) {
-      // Will combine in tagline composition.
-      add('prepares_castling', null);
-      // store side as motif metadata via a parallel value
-      motifs[motifs.length - 1] = `prepares_castling_${castlingSide}`;
-    } else {
-      add(`prepares_castling_${castlingSide}`, `Clears the back rank for ${castlingSide} castling`);
-    }
+    add(`prepares_castling_${castlingSide}`, `Clears the way for ${castlingSide} castle`);
   }
 
   // Attacks an enemy pawn (especially weak ones).
@@ -924,7 +917,11 @@ export function quickExplain(fenBefore, moveUCI) {
     const eyes = detectEyesKingZone(
       M.chessBefore, M.chessAfter, M.from, M.to, M.movingPiece, M.opponentColor);
     if (eyes) {
-      add('eyes_king_zone', `Eyes the squares around the king`);
+      // Phrase by piece type so it reads naturally.
+      const phrase = M.movingPiece.type === 'b' ? "Eyes the king's diagonal"
+                   : M.movingPiece.type === 'r' ? "Eyes the king's file"
+                   : "Eyes the king's position";
+      add('eyes_king_zone', phrase);
     }
   }
 
@@ -952,6 +949,9 @@ export function quickExplain(fenBefore, moveUCI) {
   });
 
   // Special combinations that read more naturally.
+  // The pattern: when `develops` co-occurs with a more specific motif, we
+  // drop the bare "Develops the X" entirely and let the specific motif
+  // speak. The SAN already communicates that a knight or bishop moved.
   function combinedPhrase() {
     const set = new Set(motifs);
     if (set.has('castles_kingside') && set.has('connects_rooks'))
@@ -966,30 +966,10 @@ export function quickExplain(fenBefore, moveUCI) {
       const cap = phrases[motifs.indexOf('capture')];
       return `${cap} with check`;
     }
-    if (set.has('develops') && (set.has('threatens') || set.has('creates_threat'))) {
-      const dev = phrases[motifs.indexOf('develops')];
-      const thr = phrases[motifs.indexOf(set.has('threatens') ? 'threatens' : 'creates_threat')];
-      return `${dev} with tempo (${thr.toLowerCase()})`;
-    }
-    if (set.has('develops') && set.has('outpost')) {
-      const dev = phrases[motifs.indexOf('develops')];
+    if (set.has('outpost') && set.has('attacks_pawn')) {
       const out = phrases[motifs.indexOf('outpost')];
-      return `${dev}, ${out.toLowerCase()}`;
-    }
-    if (set.has('develops')
-        && (set.has('prepares_castling_kingside') || set.has('prepares_castling_queenside'))) {
-      const dev = phrases[motifs.indexOf('develops')];
-      const side = set.has('prepares_castling_kingside') ? 'kingside' : 'queenside';
-      return `${dev}, preparing to castle ${side}`;
-    }
-    if (set.has('develops') && set.has('attacks_pawn')) {
-      const dev = phrases[motifs.indexOf('develops')];
-      const ap = phrases[motifs.indexOf('attacks_pawn')];
-      return `${dev}, ${ap.toLowerCase()}`;
-    }
-    if (set.has('develops') && set.has('eyes_king_zone')) {
-      const dev = phrases[motifs.indexOf('develops')];
-      return `${dev}, eyeing the king's position`;
+      const ap  = phrases[motifs.indexOf('attacks_pawn')];
+      return `${out}, ${ap.toLowerCase()}`;
     }
     return null;
   }

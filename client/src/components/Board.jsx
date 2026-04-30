@@ -2,13 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import {
-  RefreshCw, RotateCcw, Lightbulb, X, ChevronLeft, ChevronRight,
+  RefreshCw, RotateCcw, ChevronLeft, ChevronRight,
   Shuffle,
 } from 'lucide-react';
 import EvalBar from './EvalBar';
 import {
   getTopMoves,
-  getBestMove,
   explainMoveAt,
 } from '../engine/analysis';
 import { getPieceValues, streamDestinationValues } from '../engine/heatmap';
@@ -110,6 +109,7 @@ export default function Board() {
   // Analysis state
   const [evalCp, setEvalCp] = useState(null);
   const [evalMate, setEvalMate] = useState(null);
+  const [gameResult, setGameResult] = useState(null);  // '1-0' / '0-1' / '½-½' / null
   const [loading, setLoading] = useState(false);
   const [topMoves, setTopMoves] = useState([]);
   const [topMovesLoading, setTopMovesLoading] = useState(false);
@@ -119,10 +119,8 @@ export default function Board() {
   const [explanation, setExplanation] = useState(null);
   const [explanationLoading, setExplanationLoading] = useState(false);
 
-  // Hint state
-  const [showHint, setShowHint] = useState(false);
-  const [hintMove, setHintMove] = useState(null);
-  const [hintLoading, setHintLoading] = useState(false);
+  // (Hint state removed — the analysis panel on the right shows the top
+  // moves with arrows; a separate Hint button is redundant.)
 
   // Click-to-select with legal-move indicators (also set during drag).
   const [selectedSquare, setSelectedSquare] = useState(null);
@@ -163,6 +161,7 @@ export default function Board() {
       setTopMoves(result.moves || []);
       setEvalCp(result.eval_cp);
       setEvalMate(result.mate ?? null);
+      setGameResult(result.result ?? null);
     } catch (error) {
       console.error("Top moves failed", error);
     } finally {
@@ -183,26 +182,11 @@ export default function Board() {
     }
   }, [fen]);
 
-  // Fetch hint
-  const fetchHint = useCallback(async () => {
-    setHintLoading(true);
-    try {
-      const result = await getBestMove(fen);
-      setHintMove(result);
-      setShowHint(true);
-    } catch (error) {
-      console.error("Hint failed", error);
-    } finally {
-      setHintLoading(false);
-    }
-  }, [fen]);
 
   // Fetch on FEN change — also resets selection + heatmap / preview data
   // so we don't briefly show stale colors from the previous position.
   useEffect(() => {
     fetchTopMoves(fen);
-    setShowHint(false);
-    setHintMove(null);
     setExplanation(null);
     setSelectedMoveIndex(null);
     setSelectedSquare(null);
@@ -485,17 +469,14 @@ export default function Board() {
     }
   };
 
-  // Arrow for hint or selected move
+  // Arrow for the currently-selected top-moves entry.
   const customArrows = useMemo(() => {
-    if (showHint && hintMove) {
-      return [[hintMove.from, hintMove.to, 'rgba(74, 222, 128, 0.8)']];
-    }
     if (selectedMoveIndex !== null && topMoves[selectedMoveIndex]) {
       const move = topMoves[selectedMoveIndex];
       return [[move.move.slice(0, 2), move.move.slice(2, 4), 'rgba(59, 130, 246, 0.7)']];
     }
     return [];
-  }, [showHint, hintMove, selectedMoveIndex, topMoves]);
+  }, [selectedMoveIndex, topMoves]);
 
   // Are we currently rendering the live "if you dropped here" preview?
   const showPreview = isDragging && !!dragHover && !!previewHeatmap;
@@ -962,9 +943,11 @@ export default function Board() {
             }}>
               {topMovesLoading
                 ? '--'
-                : evalMate !== null
-                  ? `${evalMate > 0 ? '' : '-'}M${Math.abs(evalMate)}`
-                  : (evalCp !== null ? (evalCp / 100).toFixed(2) : '--')}
+                : gameResult
+                  ? gameResult
+                  : evalMate !== null
+                    ? `${evalMate > 0 ? '' : '-'}M${Math.abs(evalMate)}`
+                    : (evalCp !== null ? (evalCp / 100).toFixed(2) : '--')}
             </div>
           </div>
           <div style={{ fontSize: '12px', color: '#71717a' }}>
@@ -1060,25 +1043,6 @@ export default function Board() {
           <div style={{ width: '1px', backgroundColor: '#3f3f46', margin: '0 4px' }} />
 
           <button
-            onClick={() => showHint ? setShowHint(false) : fetchHint()}
-            disabled={hintLoading}
-            style={{
-              padding: '9px',
-              borderRadius: '3px',
-              backgroundColor: showHint ? '#22c55e' : '#27272a',
-              color: showHint ? '#09090b' : '#a1a1aa',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title={showHint ? 'Hide hint' : "Show the engine's best move"}
-          >
-            {showHint ? <X size={16} /> : <Lightbulb size={16} />}
-          </button>
-
-          <button
             onClick={loadRandomPosition}
             title="Load a random plausible position"
             style={{
@@ -1128,7 +1092,7 @@ export default function Board() {
       <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
         {/* Eval Bar */}
         <div style={{ height: '520px' }}>
-          <EvalBar evalCp={evalCp} mate={evalMate} loading={topMovesLoading} />
+          <EvalBar evalCp={evalCp} mate={evalMate} result={gameResult} loading={topMovesLoading} />
         </div>
 
         {/* Board (with pawn-value overlay) */}

@@ -499,14 +499,16 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
       san,
       summary: 'Checkmate!',
       details: 'Delivers checkmate. The opponent has no legal response.',
-      quality: 'brilliant',
+      // Mate is the best possible outcome — classify as 'best', not
+      // 'brilliant'. Brilliant is reserved for non-obvious sacrifices.
+      quality: 'best',
       factors: [{ type: 'checkmate', value_pawns: 100 }],
       motifs: ['checkmate'],
       evalBefore: evalBefore / 100,
       evalAfter: evalAfter / 100,
       evalDelta: evalDeltaCp / 100,
       winRateLoss: 0,
-      isBestMove: cls.isBestMove,
+      isBestMove: true,
       isOnlyMove: cls.isOnlyMove,
       bestMoveUCI: cls.bestMoveUCI,
     };

@@ -2,6 +2,7 @@
 // Shapes match the (deprecated) server endpoints so Board.jsx stays close
 // to its original form: getTopMoves / getBestMove / explainMoveAt.
 
+import { Chess } from 'chess.js';
 import engine from './engine';
 import { uciToSan, makeMove, getSideToMove } from './chess';
 import { explainMove } from './explainer';
@@ -27,6 +28,31 @@ async function ensureReady() {
 }
 
 export async function getTopMoves(fen, count = 10) {
+  // Terminal positions: skip the engine. It has no `bestmove` to give and
+  // returns score=0, which would render as "0.00" instead of the real
+  // result (1-0 / 0-1 / ½-½).
+  try {
+    const c = new Chess(fen);
+    if (c.isCheckmate()) {
+      // Side-to-move is mated → the OTHER side won.
+      const winnerWhite = c.turn() === 'b';
+      return {
+        fen,
+        eval_cp: winnerWhite ? 10_000 : -10_000,
+        mate: 0,
+        moves: [],
+        gameOver: 'checkmate',
+        result: winnerWhite ? '1-0' : '0-1',
+      };
+    }
+    if (c.isStalemate()) {
+      return { fen, eval_cp: 0, mate: null, moves: [], gameOver: 'stalemate', result: '½-½' };
+    }
+    if (c.isDraw()) {
+      return { fen, eval_cp: 0, mate: null, moves: [], gameOver: 'draw', result: '½-½' };
+    }
+  } catch { /* fall through to engine */ }
+
   await ensureReady();
   const turn = getSideToMove(fen);
   const result = await engine.analyzeMultiPV(fen, Math.min(count, 10), TOP_MOVES_DEPTH);
@@ -56,6 +82,8 @@ export async function getTopMoves(fen, count = 10) {
     eval_cp: normalizeToWhite(result.score ?? 0, turn),
     mate: mateToWhite(result.mate, turn),
     moves,
+    gameOver: null,
+    result: null,
   };
 }
 
