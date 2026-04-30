@@ -28,12 +28,37 @@ import {
 
 const HEATMAP_DEPTH = 10;
 
-// Cap on |delta_cp| when measuring a piece's contextual worth. Removing a
-// piece can expose a mate; the engine then returns a mate-encoded score
-// (≈ ±100,000 cp) and the naive `base − afterRemoval` blows up to ±1000
-// pawns. Cap to a sane ceiling so the heatmap doesn't display nonsense.
-// 1500 cp = 15 pawns; anything bigger means "this piece is essential."
-const MAX_DELTA_CP = 1500;
+// Mate-encoded scores from the engine are huge (≈ ±100,000 cp). Translate
+// either side of the eval to a sane "owner-perspective cp" value where
+// owner-mates → +1000 and owner-gets-mated → -1000. cp scores are clamped
+// to ±1500 to defend against any latent mate-encoding bleed-through.
+function ownerValue(evalRes, sideToMoveAtFen, ownerColor) {
+  if (!evalRes) return 0;
+  const cp = evalRes.cp ?? 0;
+  const mate = evalRes.mate ?? null;
+  // Engine reports from side-to-move's POV; normalize to white POV first.
+  const whiteCp   = sideToMoveAtFen === 'w' ?  cp : -cp;
+  const whiteMate = mate !== null
+    ? (sideToMoveAtFen === 'w' ?  mate : -mate)
+    : null;
+  // Then to owner POV.
+  const ownerCp   = ownerColor === 'w' ?  whiteCp : -whiteCp;
+  const ownerMate = whiteMate !== null
+    ? (ownerColor === 'w' ?  whiteMate : -whiteMate)
+    : null;
+  if (ownerMate !== null) {
+    // Distinguish "owner mates" (+1000) from "owner gets mated" (-1000) but
+    // ignore the mate distance — the heatmap just needs a magnitude to
+    // reason about, not the exact ply count.
+    return ownerMate > 0 ? 1000 : -1000;
+  }
+  return Math.max(-1500, Math.min(1500, ownerCp));
+}
+
+// Cap on |delta_cp| for display. 5 pawns is enough to convey "very
+// important". Going higher (e.g. 15) makes every piece around a mating
+// attack read identically and conveys no info.
+const MAX_DELTA_CP = 500;
 
 function clampDelta(cp) {
   if (cp > MAX_DELTA_CP) return MAX_DELTA_CP;
@@ -61,17 +86,12 @@ export async function getPieceValues(fen) {
     let deltaCp = 0;
     if (piece.type !== 'k') {
       const fenWithoutPiece = removePiece(fen, piece.square);
-      // Removing a piece can produce technically illegal positions (e.g. king
-      // exposed to check), but Stockfish will still evaluate them, which is
-      // fine for relative-value scoring.
       const evalRes = await engine.evaluate(fenWithoutPiece, HEATMAP_DEPTH);
-      const evalWithout = normalizeToWhite(evalRes.cp, turn);
-      // Δ from this piece's owner's POV: positive = "this piece helps me"
-      const raw = piece.color === 'w'
-        ? baseEvalCp - evalWithout
-        : evalWithout - baseEvalCp;
-      // Clamp to prevent mate-encoding (≈100,000 cp) from polluting deltas.
-      deltaCp = clampDelta(raw);
+      // Use owner-relative values that fold mate scores into ±1000 so
+      // mate-encoding doesn't blow up the delta.
+      const baseOwner = ownerValue(baseRes, turn, piece.color);
+      const removedOwner = ownerValue(evalRes, turn, piece.color);
+      deltaCp = clampDelta(baseOwner - removedOwner);
     }
     results.push({
       ...piece,
@@ -104,17 +124,13 @@ export function streamDestinationValues(fen, sourceSquare, onResult) {
         const newTurn = getSideToMove(newFen);
         const baseRes = await engine.evaluate(newFen, HEATMAP_DEPTH);
         if (cancelled) break;
-        const baseCp = normalizeToWhite(baseRes.cp, newTurn);
-
         const fenWithoutPiece = removePiece(newFen, dest);
         const withoutRes = await engine.evaluate(fenWithoutPiece, HEATMAP_DEPTH);
         if (cancelled) break;
-        const withoutCp = normalizeToWhite(withoutRes.cp, newTurn);
-
-        const rawValue = piece.color === 'w'
-          ? baseCp - withoutCp
-          : withoutCp - baseCp;
-        const valueCp = clampDelta(rawValue);
+        const valueCp = clampDelta(
+          ownerValue(baseRes, newTurn, piece.color)
+          - ownerValue(withoutRes, newTurn, piece.color)
+        );
         onResult({
           dest,
           value_cp: valueCp,

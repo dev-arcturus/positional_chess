@@ -109,6 +109,7 @@ export default function Board() {
 
   // Analysis state
   const [evalCp, setEvalCp] = useState(null);
+  const [evalMate, setEvalMate] = useState(null);
   const [loading, setLoading] = useState(false);
   const [topMoves, setTopMoves] = useState([]);
   const [topMovesLoading, setTopMovesLoading] = useState(false);
@@ -161,6 +162,7 @@ export default function Board() {
       const result = await getTopMoves(currentFen, 10);
       setTopMoves(result.moves || []);
       setEvalCp(result.eval_cp);
+      setEvalMate(result.mate ?? null);
     } catch (error) {
       console.error("Top moves failed", error);
     } finally {
@@ -703,9 +705,27 @@ export default function Board() {
     } catch { return 'q'; }
   }, [selectedSquare, heatmapPieces, fen]);
 
-  // King safety score (0–9) rendered ON each king as a label. 0 = exposed,
-  // 9 = locked-down safe. Same heuristic as the (now removed) toolbar
-  // badges, but mapped to a 0–9 scale and shown right on the king square.
+  // King safety score (0–9) rendered ON each king as a label.
+  //
+  // Algorithm:
+  //   shield      = pawns directly in front of king on the 3 files
+  //                 [kf-1, kf, kf+1], at ranks +1 / +2; rank-1 worth 2 pts,
+  //                 rank-2 worth 1. Cap 6.
+  //   openFiles   = files in {kf-1, kf, kf+1} with no friendly pawn. Each
+  //                 file deducts 1.5 points.
+  //   attackers   = enemy pieces that attack any square in the king's
+  //                 3×3 zone. Weighted: p=1 n=2 b=2 r=3 q=4. Each
+  //                 attacker-square pair deducts 0.5 points.
+  //   castled     = +1.5 if king is on g/c file at the back rank.
+  //   central     = -3 if king is on file 2-5 AND rank 2-5 (out in the
+  //                 middle of the board).
+  //
+  //   raw         = shield - 1.5*openFiles - 0.5*attackerWeight
+  //                 + castledBonus - centerPenalty
+  //   raw range   = roughly [-12, +8]
+  //   score       = round( clamp(raw, -12, 8) - (-12)) / 20 * 9 )
+  //
+  // Result is 0..9: 0 = wide-open king, 9 = locked-down safe.
   const kingSafetyLabels = useMemo(() => {
     if (!heatmapVisible) return [];
     try {
@@ -714,25 +734,84 @@ export default function Board() {
       function kingPos(color) {
         for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
           const p = board[r][f];
-          if (p && p.type === 'k' && p.color === color) return { r, f, sq: String.fromCharCode(97 + f) + (8 - r) };
+          if (p && p.type === 'k' && p.color === color) {
+            return { r, f, sq: String.fromCharCode(97 + f) + (8 - r) };
+          }
         }
         return null;
       }
       function safety(kingPos, color) {
         if (!kingPos) return 4;
+        const { r: kr, f: kf } = kingPos;
         const enemy = color === 'w' ? 'b' : 'w';
-        let pawns = 0, attackers = 0;
-        for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-          const p = board[r][f];
-          if (!p) continue;
-          const dist = Math.max(Math.abs(r - kingPos.r), Math.abs(f - kingPos.f));
-          if (p.type === 'p' && p.color === color && dist <= 2) pawns++;
-          if (p.color === enemy && p.type !== 'p' && p.type !== 'k' && dist <= 3) attackers++;
+        // chess.js board(): row 0 = rank 8, row 7 = rank 1. So "forward"
+        // for white is row-decreasing (toward rank 8), for black row-increasing.
+        const forwardDr = color === 'w' ? -1 : 1;
+
+        // 1. Pawn shield (max 6).
+        let shield = 0;
+        for (const df of [-1, 0, 1]) {
+          const f = kf + df;
+          if (f < 0 || f > 7) continue;
+          for (let i = 1; i <= 2; i++) {
+            const r = kr + forwardDr * i;
+            if (r < 0 || r > 7) continue;
+            const p = board[r][f];
+            if (p && p.type === 'p' && p.color === color) {
+              shield += i === 1 ? 2 : 1;
+              break;
+            }
+          }
         }
-        const center = (kingPos.f >= 2 && kingPos.f <= 5 && kingPos.r >= 2 && kingPos.r <= 5);
-        // Raw range typically -4 .. +6. Shift to 0..9.
-        const raw = pawns - attackers - (center ? 2 : 0);
-        return Math.max(0, Math.min(9, raw + 4));
+        if (shield > 6) shield = 6;
+
+        // 2. Open files near king.
+        let openFiles = 0;
+        for (const df of [-1, 0, 1]) {
+          const f = kf + df;
+          if (f < 0 || f > 7) continue;
+          let hasFriendlyPawn = false;
+          for (let r = 0; r < 8; r++) {
+            const p = board[r][f];
+            if (p && p.type === 'p' && p.color === color) {
+              hasFriendlyPawn = true; break;
+            }
+          }
+          if (!hasFriendlyPawn) openFiles++;
+        }
+
+        // 3. Attacker weight on king zone.
+        const W = { p: 1, n: 2, b: 2, r: 3, q: 4 };
+        let attackerWeight = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let df = -1; df <= 1; df++) {
+          const r = kr + dr, f = kf + df;
+          if (r < 0 || r > 7 || f < 0 || f > 7) continue;
+          const sq = String.fromCharCode(97 + f) + (8 - r);
+          const a = game.attackers(sq, enemy);
+          if (!a) continue;
+          for (const aSq of a) {
+            const ap = game.get(aSq);
+            if (!ap) continue;
+            attackerWeight += (W[ap.type] || 0);
+          }
+        }
+
+        // 4. Castled-king bonus.
+        const castled =
+          (color === 'w' && kr === 7 && (kf === 6 || kf === 2)) ||
+          (color === 'b' && kr === 0 && (kf === 6 || kf === 2));
+
+        // 5. Central exposure penalty.
+        const central = kf >= 2 && kf <= 5 && kr >= 2 && kr <= 5;
+
+        const raw = shield
+                  - 1.5 * openFiles
+                  - 0.5 * attackerWeight
+                  + (castled ? 1.5 : 0)
+                  - (central ? 3 : 0);
+
+        const clamped = Math.max(-12, Math.min(8, raw));
+        return Math.round(((clamped + 12) / 20) * 9);
       }
       const wK = kingPos('w'), bK = kingPos('b');
       const labels = [];
@@ -830,18 +909,18 @@ export default function Board() {
     heatmapPieces, showPreview, orientation, selectedPieceType,
   ]);
 
-  // Quality to color
+  // Quality to color (matches the Lichess-style ladder + missed_mate).
   const getQualityColor = (quality) => {
     switch (quality) {
-      case 'brilliant': return '#22d3ee';
-      case 'great':     return '#34d399';
-      case 'best':      return '#4ade80';
-      case 'good':      return '#86efac';
-      case 'neutral':   return '#a1a1aa';
-      case 'inaccuracy':return '#fbbf24';
-      case 'mistake':   return '#fb923c';
-      case 'blunder':   return '#ef4444';
-      default:          return '#a1a1aa';
+      case 'brilliant':   return '#22d3ee';   // cyan
+      case 'great':       return '#34d399';   // emerald
+      case 'best':        return '#4ade80';   // green
+      case 'good':        return '#86efac';   // light green
+      case 'inaccuracy':  return '#fbbf24';   // amber
+      case 'mistake':     return '#fb923c';   // orange
+      case 'blunder':     return '#ef4444';   // red
+      case 'missed_mate': return '#dc2626';   // dark red
+      default:            return '#a1a1aa';
     }
   };
 
@@ -875,9 +954,17 @@ export default function Board() {
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
               fontSize: '20px',
               fontWeight: 'bold',
-              color: loading || topMovesLoading ? '#71717a' : (evalCp > 50 ? '#4ade80' : evalCp < -50 ? '#f87171' : '#e4e4e7')
+              color: loading || topMovesLoading
+                ? '#71717a'
+                : evalMate !== null
+                  ? (evalMate > 0 ? '#4ade80' : '#f87171')
+                  : (evalCp > 50 ? '#4ade80' : evalCp < -50 ? '#f87171' : '#e4e4e7')
             }}>
-              {topMovesLoading ? '--' : (evalCp !== null ? (evalCp / 100).toFixed(2) : '--')}
+              {topMovesLoading
+                ? '--'
+                : evalMate !== null
+                  ? `${evalMate > 0 ? '' : '-'}M${Math.abs(evalMate)}`
+                  : (evalCp !== null ? (evalCp / 100).toFixed(2) : '--')}
             </div>
           </div>
           <div style={{ fontSize: '12px', color: '#71717a' }}>
@@ -1041,7 +1128,7 @@ export default function Board() {
       <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
         {/* Eval Bar */}
         <div style={{ height: '520px' }}>
-          <EvalBar evalCp={evalCp} loading={topMovesLoading} />
+          <EvalBar evalCp={evalCp} mate={evalMate} loading={topMovesLoading} />
         </div>
 
         {/* Board (with pawn-value overlay) */}

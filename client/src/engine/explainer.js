@@ -122,13 +122,25 @@ function iterateBoardSquares(chess, callback) {
 // Win-rate model (Lichess-style sigmoid)
 // ───────────────────────────────────────────────────────────────────────────
 
+// Lichess win-rate model. cp clamped to ±1000 (the sigmoid is essentially
+// flat past ±10 pawns); coefficient 0.00368208 matches lichess/lila exactly.
 export function winRate(cpWhitePOV) {
-  const clamped = Math.max(-2000, Math.min(2000, cpWhitePOV));
-  return 100 / (1 + Math.exp(-clamped / 300));
+  const clamped = Math.max(-1000, Math.min(1000, cpWhitePOV));
+  return 100 / (1 + Math.exp(-0.00368208 * clamped));
 }
 
 function winRateFromMover(cpMoverPOV) {
   return winRate(cpMoverPOV);
+}
+
+// Lichess loss-based judgment ladder. loss is in win-rate percentage
+// points (0..100). Lichess thresholds: <10 OK, 10-20 inaccuracy,
+// 20-30 mistake, ≥30 blunder.
+function classifyByLoss(loss) {
+  if (loss < 10) return 'good';
+  if (loss < 20) return 'inaccuracy';
+  if (loss < 30) return 'mistake';
+  return 'blunder';
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -371,6 +383,13 @@ function moverScoreToWhite(scoreMoverPOV, moverColor) {
   return moverColor === 'w' ? scoreMoverPOV : -scoreMoverPOV;
 }
 
+// Lichess-style classifier with two extras drawn from chess analysis tools:
+//   • brilliant — top-1 + a real material sacrifice in a non-decided position
+//   • great     — top-1 where alternatives were ≥ 10pp worse ("only move")
+//   • missed_mate — best move had a mate score, played move did not
+//
+// Otherwise the ladder is the standard Lichess judgment: good / inaccuracy
+// / mistake / blunder by win-rate-loss thresholds 10 / 20 / 30 pp.
 function classifyMove({
   moveUCI,
   moverColor,
@@ -379,13 +398,13 @@ function classifyMove({
   topMoves,
   sacrifice,
 }) {
-  // Mover-perspective win-rate helper
-  const wrMover = (cpWhite) => moverColor === 'w' ? winRate(cpWhite) : 100 - winRate(cpWhite);
+  const wrMover = (cpWhite) =>
+    moverColor === 'w' ? winRate(cpWhite) : 100 - winRate(cpWhite);
 
   const best = topMoves && topMoves[0];
   const second = topMoves && topMoves[1];
+  const playedInTop = topMoves && topMoves.find(m => m.move === moveUCI);
 
-  // Convert engine scores (mover POV) to white POV for the win-rate function
   const bestWhite = best ? moverScoreToWhite(best.score, moverColor) : evalAfterWhite;
   const secondWhite = second ? moverScoreToWhite(second.score, moverColor) : bestWhite;
 
@@ -396,41 +415,31 @@ function classifyMove({
 
   const loss = Math.max(0, wrBest - wrPlayed);
   const onlyMoveGap = wrBest - wrSecond;
-  const isOnlyMove = onlyMoveGap >= 15;
+  const isOnlyMove = onlyMoveGap >= 10;
   const isBestMove = best && best.move === moveUCI;
 
-  // Difficulty weighting: when one side is already clearly winning/losing,
-  // small losses matter less. equity = distance from 50% (mover's POV).
-  const equity = Math.abs(wrBefore - 50);
-  const difficultyFactor =
-    equity > 35 ? 0.5 :
-    equity > 20 ? 0.75 :
-    1.0;
-  const effectiveLoss = loss * difficultyFactor;
+  // Detect missed mate: engine's top move ended in mate, but the played
+  // move's resulting position doesn't.
+  const bestHasMate = best && best.mate !== null && best.mate !== undefined;
+  const playedHasMate = playedInTop && playedInTop.mate !== null && playedInTop.mate !== undefined;
 
   let quality;
-  if (isBestMove && isOnlyMove && sacrifice && wrBefore < 85) {
+  if (isBestMove && sacrifice && wrBefore < 85) {
     quality = 'brilliant';
   } else if (isBestMove && isOnlyMove) {
     quality = 'great';
   } else if (isBestMove) {
     quality = 'best';
-  } else if (effectiveLoss < 3) {
-    quality = 'good';
-  } else if (effectiveLoss < 6) {
-    quality = 'neutral';
-  } else if (effectiveLoss < 12) {
-    quality = 'inaccuracy';
-  } else if (effectiveLoss < 20) {
-    quality = 'mistake';
+  } else if (bestHasMate && !playedHasMate) {
+    quality = 'missed_mate';
   } else {
-    quality = 'blunder';
+    quality = classifyByLoss(loss);
   }
 
   return {
     quality,
     loss,
-    effectiveLoss,
+    effectiveLoss: loss, // kept for callers; difficulty weighting removed
     wrBefore,
     wrPlayed,
     wrBest,
@@ -666,14 +675,14 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
 
   // Build summary using both quality and a context-aware addendum.
   const summaries = {
-    brilliant:  'A brilliant move — a non-obvious tactical resource.',
-    great:      'A great move — the only move that keeps the advantage.',
-    best:       'The best move in the position.',
-    good:       'A solid move that maintains the balance.',
-    neutral:    'A reasonable move.',
-    inaccuracy: 'A slight inaccuracy — better options were available.',
-    mistake:    'A mistake. The position is now worse than it should be.',
-    blunder:    'A blunder. This loses significant advantage.',
+    brilliant:    'A brilliant move — a non-obvious tactical resource.',
+    great:        'A great move — the only move that keeps the advantage.',
+    best:         'The best move in the position.',
+    good:         'A solid move that maintains the balance.',
+    inaccuracy:   'A slight inaccuracy — better options were available.',
+    mistake:      'A mistake. The position is now worse than it should be.',
+    blunder:      'A blunder. This loses significant advantage.',
+    missed_mate:  'Missed a forced mate.',
   };
   let summary = summaries[quality] || 'A move.';
 
