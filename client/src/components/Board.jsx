@@ -703,6 +703,66 @@ export default function Board() {
     } catch { return 'q'; }
   }, [selectedSquare, heatmapPieces, fen]);
 
+  // King safety score (0–9) rendered ON each king as a label. 0 = exposed,
+  // 9 = locked-down safe. Same heuristic as the (now removed) toolbar
+  // badges, but mapped to a 0–9 scale and shown right on the king square.
+  const kingSafetyLabels = useMemo(() => {
+    if (!heatmapVisible) return [];
+    try {
+      const game = new Chess(fen);
+      const board = game.board();
+      function kingPos(color) {
+        for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+          const p = board[r][f];
+          if (p && p.type === 'k' && p.color === color) return { r, f, sq: String.fromCharCode(97 + f) + (8 - r) };
+        }
+        return null;
+      }
+      function safety(kingPos, color) {
+        if (!kingPos) return 4;
+        const enemy = color === 'w' ? 'b' : 'w';
+        let pawns = 0, attackers = 0;
+        for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+          const p = board[r][f];
+          if (!p) continue;
+          const dist = Math.max(Math.abs(r - kingPos.r), Math.abs(f - kingPos.f));
+          if (p.type === 'p' && p.color === color && dist <= 2) pawns++;
+          if (p.color === enemy && p.type !== 'p' && p.type !== 'k' && dist <= 3) attackers++;
+        }
+        const center = (kingPos.f >= 2 && kingPos.f <= 5 && kingPos.r >= 2 && kingPos.r <= 5);
+        // Raw range typically -4 .. +6. Shift to 0..9.
+        const raw = pawns - attackers - (center ? 2 : 0);
+        return Math.max(0, Math.min(9, raw + 4));
+      }
+      const wK = kingPos('w'), bK = kingPos('b');
+      const labels = [];
+      for (const [k, color] of [[wK, 'w'], [bK, 'b']]) {
+        if (!k) continue;
+        const score = safety(k, color);
+        // 0..9 mapped to red→white→green via the existing piece-relative
+        // color helper. Treat (score-4.5)*100 cp as the "pretend delta" and
+        // scale by king (calibration tuned so 0 reads strong red, 9 strong green).
+        const fakeCp = (score - 4.5) * 200;
+        const color2 = colorForCp(fakeCp, 'b', 5);
+        // Compute pixel position with flip support.
+        const file = k.f;
+        const rank = 7 - k.r;
+        let col = file, row = 7 - rank;
+        if (orientation === 'black') { col = 7 - col; row = 7 - row; }
+        const SQ = 520 / 8;
+        labels.push({
+          square: k.sq,
+          left: col * SQ,
+          top: row * SQ,
+          size: SQ,
+          color: color2,
+          label: String(score),
+        });
+      }
+      return labels;
+    } catch { return []; }
+  }, [heatmapVisible, fen, orientation]);
+
   // Numeric value badges per piece. THE core visualization: each piece's
   // contextual worth in the current position, OR — when previewing a drag
   // hover — the change in worth versus the current position. Color is
@@ -822,58 +882,6 @@ export default function Board() {
           </div>
           <div style={{ fontSize: '12px', color: '#71717a' }}>
             {sideToMove === 'w' ? 'White' : 'Black'} to move
-          </div>
-
-          {/* King safety: simple heuristic — friendly pawns within 2 squares
-              of the king minus enemy attackers within 3 squares, plus a
-              small penalty for an exposed center king. Quick visual cue. */}
-          <div style={{ display: 'flex', gap: '4px' }} title="King safety: friendly pawns nearby minus enemy attackers (rough)">
-            {(() => {
-              try {
-                const game = new Chess(fen);
-                const board = game.board();
-                let wKing = null, bKing = null;
-                for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-                  const p = board[r][f];
-                  if (!p || p.type !== 'k') continue;
-                  if (p.color === 'w') wKing = { r, f };
-                  else bKing = { r, f };
-                }
-                function safety(kingPos, color) {
-                  if (!kingPos) return 0;
-                  const enemy = color === 'w' ? 'b' : 'w';
-                  let pawns = 0, attackers = 0;
-                  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-                    const p = board[r][f];
-                    if (!p) continue;
-                    const dist = Math.max(Math.abs(r - kingPos.r), Math.abs(f - kingPos.f));
-                    if (p.type === 'p' && p.color === color && dist <= 2) pawns++;
-                    if (p.color === enemy && p.type !== 'p' && p.type !== 'k' && dist <= 3) attackers++;
-                  }
-                  // Center penalty: file 2-5, rank 2-5
-                  const center = (kingPos.f >= 2 && kingPos.f <= 5 && kingPos.r >= 2 && kingPos.r <= 5);
-                  return pawns - attackers - (center ? 2 : 0);
-                }
-                const w = safety(wKing, 'w');
-                const b = safety(bKing, 'b');
-                const renderBadge = (val, label) => (
-                  <span title={`${label} king safety`} style={{
-                    fontSize: '10px',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                    fontWeight: 700,
-                    padding: '3px 6px',
-                    borderRadius: '2px',
-                    backgroundColor: 'rgba(39, 39, 42, 0.8)',
-                    color: val >= 2 ? '#86efac' : val <= -1 ? '#fca5a5' : '#a1a1aa',
-                    letterSpacing: '-0.02em',
-                    border: `1px solid ${val >= 2 ? 'rgba(134, 239, 172, 0.3)' : val <= -1 ? 'rgba(252, 165, 165, 0.3)' : '#3f3f46'}`,
-                  }}>
-                    {label === 'White' ? '♔' : '♚'} {val >= 0 ? '+' : ''}{val}
-                  </span>
-                );
-                return <>{renderBadge(w, 'White')}{renderBadge(b, 'Black')}</>;
-              } catch { return null; }
-            })()}
           </div>
 
           {/* Material balance badge — quick read on who's up material. */}
@@ -1072,7 +1080,7 @@ export default function Board() {
               Both flavors share the same big-centered design: ~22px bold
               monospace, color interpolated from white toward saturated
               green/red as the magnitude grows, no shadow. */}
-          {heatmapVisible && (valueLabels.length > 0 || destinationLabels.length > 0) && (
+          {heatmapVisible && (valueLabels.length > 0 || destinationLabels.length > 0 || kingSafetyLabels.length > 0) && (
             <div style={{
               position: 'absolute',
               top: 0, left: 0, width: '100%', height: '100%',
@@ -1117,6 +1125,26 @@ export default function Board() {
                   // legibility on any square color or piece icon.
                   WebkitTextStrokeWidth: '4px',
                   WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.92)',
+                  paintOrder: 'stroke fill',
+                }}>
+                  {v.label}
+                </div>
+              ))}
+              {kingSafetyLabels.map(v => (
+                <div key={`king-${v.square}`} style={{
+                  position: 'absolute',
+                  left: `${v.left}px`, top: `${v.top}px`,
+                  width: `${v.size}px`, height: `${v.size}px`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '32px',
+                  fontWeight: 900,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  color: v.color,
+                  letterSpacing: '-0.04em',
+                  WebkitTextStrokeWidth: '5px',
+                  WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.94)',
                   paintOrder: 'stroke fill',
                 }}>
                   {v.label}
