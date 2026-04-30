@@ -890,20 +890,41 @@ export default function Board() {
     heatmapPieces, showPreview, orientation, selectedPieceType,
   ]);
 
-  // Quality to color (matches the Lichess-style ladder + missed_mate).
-  const getQualityColor = (quality) => {
-    switch (quality) {
-      case 'brilliant':   return '#22d3ee';   // cyan
-      case 'great':       return '#34d399';   // emerald
-      case 'best':        return '#4ade80';   // green
-      case 'good':        return '#86efac';   // light green
-      case 'inaccuracy':  return '#fbbf24';   // amber
-      case 'mistake':     return '#fb923c';   // orange
-      case 'blunder':     return '#ef4444';   // red
-      case 'missed_mate': return '#dc2626';   // dark red
-      default:            return '#a1a1aa';
-    }
+  // Quality → color, symbol, label. Lichess-style annotation symbols
+  // (!!, !, ?!, ?, ??) plus our own ★ for `best` and ✗ for `missed_mate`.
+  const QUALITY_COLOR = {
+    brilliant:   '#22d3ee',   // cyan-400
+    great:       '#34d399',   // emerald-400
+    best:        '#4ade80',   // green-400
+    good:        '#86efac',   // green-300
+    inaccuracy:  '#fbbf24',   // amber-400
+    mistake:     '#fb923c',   // orange-400
+    blunder:     '#ef4444',   // red-500
+    missed_mate: '#dc2626',   // red-600
   };
+  const QUALITY_SYMBOL = {
+    brilliant:   '!!',
+    great:       '!',
+    best:        '★',
+    good:        '',
+    inaccuracy:  '?!',
+    mistake:     '?',
+    blunder:     '??',
+    missed_mate: '✗',
+  };
+  const QUALITY_LABEL = {
+    brilliant:   'Brilliant',
+    great:       'Great',
+    best:        'Best',
+    good:        'Good',
+    inaccuracy:  'Inaccuracy',
+    mistake:     'Mistake',
+    blunder:     'Blunder',
+    missed_mate: 'Missed mate',
+  };
+  const getQualityColor = (q) => QUALITY_COLOR[q] || '#a1a1aa';
+  const getQualitySymbol = (q) => QUALITY_SYMBOL[q] ?? '';
+  const getQualityLabel = (q) => QUALITY_LABEL[q] || '';
 
   return (
     <div style={{
@@ -1272,18 +1293,30 @@ export default function Board() {
               </div>
               <div style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
+                alignItems: 'baseline',
+                gap: '6px',
                 marginBottom: '4px',
+                flexWrap: 'wrap',
               }}>
                 <span style={{
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                  fontSize: '15px',
+                  fontSize: '16px',
                   fontWeight: 700,
                   color: '#fafafa',
                   letterSpacing: '-0.02em',
                 }}>
                   {lastMoveAnalysis.san}
+                  {!lastMoveAnalysis.loading && getQualitySymbol(lastMoveAnalysis.quality) && (
+                    <span style={{
+                      marginLeft: '4px',
+                      color: getQualityColor(lastMoveAnalysis.quality),
+                      fontSize: '18px',
+                      fontWeight: 900,
+                      letterSpacing: '-0.02em',
+                    }}>
+                      {getQualitySymbol(lastMoveAnalysis.quality)}
+                    </span>
+                  )}
                 </span>
                 {lastMoveAnalysis.loading ? (
                   <span style={{ fontSize: '10px', color: '#71717a', textTransform: 'uppercase' }}>
@@ -1293,14 +1326,14 @@ export default function Board() {
                   <span style={{
                     fontSize: '9px',
                     fontWeight: 700,
-                    letterSpacing: '0.06em',
+                    letterSpacing: '0.08em',
                     textTransform: 'uppercase',
                     color: getQualityColor(lastMoveAnalysis.quality),
-                    border: `1px solid ${getQualityColor(lastMoveAnalysis.quality)}`,
-                    padding: '2px 6px',
+                    backgroundColor: `${getQualityColor(lastMoveAnalysis.quality)}26`, // ~15% alpha
+                    padding: '3px 7px',
                     borderRadius: '2px',
                   }}>
-                    {lastMoveAnalysis.quality}
+                    {getQualityLabel(lastMoveAnalysis.quality)}
                   </span>
                 )}
                 {!lastMoveAnalysis.loading && typeof lastMoveAnalysis.winRateLoss === 'number' && lastMoveAnalysis.winRateLoss >= 1 && (
