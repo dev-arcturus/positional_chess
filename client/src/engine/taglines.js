@@ -440,10 +440,81 @@ function detectSacrificeApprox(chessAfter, toSquare, movingPiece, capturedPiece)
 
 // ── Activity (uses real mobility, not just PST) ─────────────────────────────
 function activityChange(chessBefore, chessAfter, fromSquare, toSquare, movingPiece) {
-  // Number of squares the piece attacks before vs. after.
   const before = squaresAttackedFrom(chessBefore, fromSquare).length;
   const after = squaresAttackedFrom(chessAfter, toSquare).length;
   return { before, after, delta: after - before };
+}
+
+// ── Prepares castling ─────────────────────────────────────────────────────
+// Minor piece moves off the back rank, freeing the path between king and
+// rook on a side where the side still has castling rights.
+function detectPreparesCastling(chessAfter, fromSq, movingPiece, color) {
+  if (!['n', 'b', 'q'].includes(movingPiece.type)) return null;
+  const [, fromR] = squareToFR(fromSq);
+  const expectedBack = color === 'w' ? 0 : 7;
+  if (fromR !== expectedBack) return null;
+  const rights = chessAfter.fen().split(' ')[2] || '';
+  const rank = color === 'w' ? '1' : '8';
+  const fromFile = fromSq[0];
+  const KOk = rights.includes(color === 'w' ? 'K' : 'k')
+    && !chessAfter.get('f' + rank)
+    && !chessAfter.get('g' + rank);
+  const QOk = rights.includes(color === 'w' ? 'Q' : 'q')
+    && !chessAfter.get('b' + rank)
+    && !chessAfter.get('c' + rank)
+    && !chessAfter.get('d' + rank);
+  if (KOk && (fromFile === 'f' || fromFile === 'g')) return 'kingside';
+  if (QOk && (fromFile === 'b' || fromFile === 'c' || fromFile === 'd')) return 'queenside';
+  return null;
+}
+
+// ── Attacks an enemy pawn (newly) ────────────────────────────────────────
+// Reports whether the move puts the moving piece in attacking range of an
+// enemy pawn it wasn't attacking before. Optionally flags weakness
+// (isolated / backward).
+function detectAttacksEnemyPawn(chessBefore, chessAfter, fromSq, toSq, movingPiece, opponentColor) {
+  const attackedBefore = new Set(squaresAttackedFrom(chessBefore, fromSq));
+  const attackedAfter = squaresAttackedFrom(chessAfter, toSq);
+  const oppPawnsAfter = pawnsByFile(chessAfter, opponentColor);
+  for (const sq of attackedAfter) {
+    if (attackedBefore.has(sq)) continue;
+    const p = chessAfter.get(sq);
+    if (!p || p.type !== 'p' || p.color !== opponentColor) continue;
+    const [pf] = squareToFR(sq);
+    const isolated = isIsolated(pf, oppPawnsAfter);
+    const backward = isBackwardPawn(chessAfter, sq, opponentColor);
+    return {
+      sq,
+      file: fileLetter(pf),
+      weak: isolated || backward,
+      kind: backward ? 'backward' : isolated ? 'isolated' : null,
+    };
+  }
+  return null;
+}
+
+// ── Eyes the enemy king zone ──────────────────────────────────────────────
+// Long-range piece (B / R / Q) whose newly attacked squares include any of
+// the 3×3 zone around the enemy king, AND it didn't attack any of those
+// squares from its previous square. Excludes direct check (already
+// detected as `check`).
+function detectEyesKingZone(chessBefore, chessAfter, fromSq, toSq, movingPiece, opponentColor) {
+  if (!['b', 'r', 'q'].includes(movingPiece.type)) return null;
+  if (chessAfter.inCheck()) return null;
+  const oppKing = findKing(chessAfter, opponentColor);
+  if (!oppKing) return null;
+  const [kf, kr] = squareToFR(oppKing);
+  const zone = new Set();
+  for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) {
+    const f = kf + df, r = kr + dr;
+    if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+    zone.add(frToSquare(f, r));
+  }
+  const before = new Set(squaresAttackedFrom(chessBefore, fromSq));
+  const after = squaresAttackedFrom(chessAfter, toSq);
+  const newlyEyed = after.filter(sq => zone.has(sq) && !before.has(sq));
+  if (newlyEyed.length === 0) return null;
+  return { count: newlyEyed.length };
 }
 
 // ── Restriction (opponent's mobility shrinks) ──────────────────────────────
@@ -820,6 +891,43 @@ export function quickExplain(fenBefore, moveUCI) {
     add('tempo', null);
   }
 
+  // ── New high-signal positional detectors ───────────────────────────────
+  // Prepares castling.
+  const castlingSide = detectPreparesCastling(M.chessAfter, M.from, M.movingPiece, M.moverColor);
+  if (castlingSide) {
+    if (motifs.includes('develops')) {
+      // Will combine in tagline composition.
+      add('prepares_castling', null);
+      // store side as motif metadata via a parallel value
+      motifs[motifs.length - 1] = `prepares_castling_${castlingSide}`;
+    } else {
+      add(`prepares_castling_${castlingSide}`, `Clears the back rank for ${castlingSide} castling`);
+    }
+  }
+
+  // Attacks an enemy pawn (especially weak ones).
+  if (!motifs.includes('threatens') && !motifs.includes('fork')
+      && !motifs.includes('capture') && M.movingPiece.type !== 'p') {
+    const attacksPawn = detectAttacksEnemyPawn(
+      M.chessBefore, M.chessAfter, M.from, M.to, M.movingPiece, M.opponentColor);
+    if (attacksPawn) {
+      const adj = attacksPawn.kind ? `${attacksPawn.kind} ` : '';
+      add('attacks_pawn', `Attacks the ${adj}${attacksPawn.file}-pawn`);
+    }
+  }
+
+  // Eyes the enemy king zone.
+  if (!motifs.includes('attacks_king')
+      && !motifs.includes('threatens') && !motifs.includes('fork')
+      && !motifs.includes('check') && !motifs.includes('discovered_check')
+      && !motifs.includes('attacks_pawn')) {
+    const eyes = detectEyesKingZone(
+      M.chessBefore, M.chessAfter, M.from, M.to, M.movingPiece, M.opponentColor);
+    if (eyes) {
+      add('eyes_king_zone', `Eyes the squares around the king`);
+    }
+  }
+
   // ── Tagline composition ─────────────────────────────────────────────────
   const PRIORITY = [
     'checkmate', 'sacrifice', 'fork', 'discovered_check', 'pin', 'skewer',
@@ -828,6 +936,8 @@ export function quickExplain(fenBefore, moveUCI) {
     'castles_kingside', 'castles_queenside', 'promotion', 'en_passant',
     'doubles_rooks', 'rook_seventh', 'open_file', 'semi_open_file',
     'outpost', 'fianchetto', 'battery', 'attacks_king', 'luft',
+    'attacks_pawn', 'eyes_king_zone',
+    'prepares_castling_kingside', 'prepares_castling_queenside',
     'develops', 'centralizes', 'defends', 'restricts',
     'pawn_break', 'pawn_lever', 'passed_pawn', 'pawn_storm',
     'doubled_pawns_them', 'backward_pawn_them', 'isolated_pawn',
@@ -842,9 +952,6 @@ export function quickExplain(fenBefore, moveUCI) {
   });
 
   // Special combinations that read more naturally.
-  // capture + threatens → "Captures the X and threatens the Y"
-  // develops + threatens → "Develops with tempo, threatening the X"
-  // capture + check → "Captures the X with check"
   function combinedPhrase() {
     const set = new Set(motifs);
     if (set.has('castles_kingside') && set.has('connects_rooks'))
@@ -869,56 +976,60 @@ export function quickExplain(fenBefore, moveUCI) {
       const out = phrases[motifs.indexOf('outpost')];
       return `${dev}, ${out.toLowerCase()}`;
     }
+    if (set.has('develops')
+        && (set.has('prepares_castling_kingside') || set.has('prepares_castling_queenside'))) {
+      const dev = phrases[motifs.indexOf('develops')];
+      const side = set.has('prepares_castling_kingside') ? 'kingside' : 'queenside';
+      return `${dev}, preparing to castle ${side}`;
+    }
+    if (set.has('develops') && set.has('attacks_pawn')) {
+      const dev = phrases[motifs.indexOf('develops')];
+      const ap = phrases[motifs.indexOf('attacks_pawn')];
+      return `${dev}, ${ap.toLowerCase()}`;
+    }
+    if (set.has('develops') && set.has('eyes_king_zone')) {
+      const dev = phrases[motifs.indexOf('develops')];
+      return `${dev}, eyeing the king's position`;
+    }
     return null;
   }
 
-  // Richer fallback than "Quiet X move" — describe activity / direction /
-  // destination so the panel always says something specific.
+  // Fallback policy: if we can't say something *non-obvious*, return null
+  // and let the UI render no tagline. Better silence than generic filler
+  // like "Repositions the rook to b1" (which restates the move notation).
+  // Only the most concrete signals make it past this gate.
   function fallbackTagline() {
     const piece = PIECE_NAME[M.movingPiece.type];
 
-    // Activity gain / loss is the single best non-tactical signal.
-    if (act.delta >= 3) return `Activates the ${piece} (now eyes ${act.after} squares)`;
-    if (act.delta >= 1) return `Improves the ${piece}'s scope`;
-    if (act.delta <= -3) return `Pulls the ${piece} back into a passive role`;
-    if (act.delta <= -1) return `Repositions the ${piece}`;
+    // Strong activity gain — meaningfully more squares attacked.
+    if (act.delta >= 4) {
+      return `Activates the ${piece} (eyes ${act.after} squares)`;
+    }
+    if (act.delta <= -4) {
+      return `Pulls the ${piece} back into a passive role`;
+    }
 
-    // Pawn-specific filler.
+    // Pawn pushes that advance to the 7th rank — concretely meaningful.
     if (M.movingPiece.type === 'p') {
       const [tf, tr] = squareToFR(M.to);
       if ((M.moverColor === 'w' && tr === 6) || (M.moverColor === 'b' && tr === 1))
-        return 'Pushes the pawn to the seventh rank';
-      // Defensive pawn push (creates a square that defends an attacked friendly piece).
-      const [, fr] = squareToFR(M.from);
-      const oneSquare = Math.abs(tr - fr) === 1;
-      if (oneSquare) return `Solidifies the ${fileLetter(tf)}-pawn structure`;
-      return `Pushes the ${fileLetter(tf)}-pawn to ${M.to}`;
-    }
-
-    // Direction toward king vs center.
-    const oppKingSq = findKing(M.chessAfter, M.opponentColor);
-    if (oppKingSq) {
-      const distBefore = chebyshev(M.from, oppKingSq);
-      const distAfter = chebyshev(M.to, oppKingSq);
-      if (distAfter < distBefore && distAfter <= 4) {
-        const [okf] = squareToFR(oppKingSq);
-        const wing = okf >= 4 ? 'kingside' : 'queenside';
-        return `Brings the ${piece} toward the ${wing}`;
+        return 'Pushes to the seventh rank';
+      // Pawn that newly attacks an enemy piece.
+      const fwd = M.moverColor === 'w' ? 1 : -1;
+      for (const df of [-1, 1]) {
+        const f = tf + df, r = tr + fwd;
+        if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+        const ap = M.chessAfter.get(frToSquare(f, r));
+        if (ap && ap.color === M.opponentColor && ap.type !== 'p') {
+          return `Attacks the ${PIECE_NAME[ap.type]}`;
+        }
       }
-    }
-    const distFromCenter = (sq) => {
-      const [f, r] = squareToFR(sq);
-      return Math.max(Math.abs(f - 3.5), Math.abs(r - 3.5));
-    };
-    if (distFromCenter(M.to) < distFromCenter(M.from) - 0.5) {
-      return `Repositions the ${piece} toward the center`;
+      // Otherwise: nothing meaningful to say. Stay silent.
+      return null;
     }
 
-    // Heavy pieces just say where they go.
-    if (['q','r'].includes(M.movingPiece.type)) {
-      return `Repositions the ${piece} to ${M.to}`;
-    }
-    return `Maneuvers the ${piece} to ${M.to}`;
+    // No specific signal. Keep silent rather than emit filler.
+    return null;
   }
 
   let tagline;
@@ -926,14 +1037,14 @@ export function quickExplain(fenBefore, moveUCI) {
   if (combo) {
     tagline = combo;
   } else if (motifPhrases.length === 0) {
-    tagline = fallbackTagline();
+    tagline = fallbackTagline(); // may be null/empty
   } else if (motifPhrases.length === 1) {
     tagline = motifPhrases[0].phrase;
   } else {
     tagline = motifPhrases.slice(0, 2).map(x => x.phrase).join(', ');
   }
 
-  return { san: M.san, motifs, tagline, fenAfter: M.fenAfter };
+  return { san: M.san, motifs, tagline: tagline || '', fenAfter: M.fenAfter };
 }
 
 // Run quickExplain on the first N plies of a PV.
