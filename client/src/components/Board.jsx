@@ -31,27 +31,17 @@ function magnitudeRelative(cp, pieceType, calibration) {
 }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// White → red/green text color. White-ish base so near-zero values
-// look neutral; saturated brand greens / reds at large magnitudes.
+// White → red/green text color. Brighter base so near-zero values
+// pop against the dark stroke even on light squares; high-saturation
+// targets so big swings are unmissable.
 function colorForCp(cp, pieceType = 'q', calibration = 3) {
   const mag = magnitudeRelative(cp, pieceType, calibration);
-  const W = [248, 250, 252];                       // slate-50
-  const TARGET = cp >= 0 ? [34, 197, 94] : [239, 68, 68]; // green-500 / red-500
+  const W = [255, 255, 255];                            // pure white base
+  const TARGET = cp >= 0 ? [134, 239, 172] : [252, 165, 165]; // green-300 / red-300
   const r = Math.round(lerp(W[0], TARGET[0], mag));
   const g = Math.round(lerp(W[1], TARGET[1], mag));
   const b = Math.round(lerp(W[2], TARGET[2], mag));
   return `rgb(${r}, ${g}, ${b})`;
-}
-
-// A piece's square is light or dark by file+rank parity. Used as the
-// stroke color around labels so they sit cleanly on the board (a thin
-// halo matching the underlying square, no shadow).
-const LIGHT_SQUARE = '#f0d9b5';
-const DARK_SQUARE  = '#b58863';
-function squareColor(square) {
-  const file = square.charCodeAt(0) - 97;
-  const rank = parseInt(square[1], 10) - 1;
-  return (file + rank) % 2 === 0 ? DARK_SQUARE : LIGHT_SQUARE;
 }
 
 // Curated "plausible" positions — openings just out of theory, sharp
@@ -221,10 +211,11 @@ export default function Board() {
     setIsDragging(false);
   }, [fen, fetchTopMoves]);
 
-  // Piece-values heatmap fetcher (refires on toggle / fen change). The
-  // numbers on every piece come from this.
+  // Piece-values heatmap fetcher. Fires whenever the heatmap could be
+  // visible — so on Shift-hold AND on drag-begin — so labels are ready
+  // by the time the user wants them.
   useEffect(() => {
-    if (!showHeatmap) return;
+    if (!showHeatmap && !isDragging) return;
     let cancelled = false;
     setHeatmapLoading(true);
     getPieceValues(fen)
@@ -232,7 +223,7 @@ export default function Board() {
       .catch(e => console.error('piece-values failed:', e))
       .finally(() => { if (!cancelled) setHeatmapLoading(false); });
     return () => { cancelled = true; };
-  }, [showHeatmap, fen]);
+  }, [showHeatmap, isDragging, fen]);
 
   // Stream "moved-piece-value at each legal destination" as soon as a
   // piece is selected (click) or picked up (drag). Each destination's
@@ -278,13 +269,39 @@ export default function Board() {
     return null;
   }
 
-  // Hold-Shift toggles the heatmap. Default is off so the board stays
-  // clean; hold Shift to reveal piece values, release to hide.
+  // Keyboard shortcuts:
+  //   ⇧ Shift (hold) → reveal piece-value heatmap
+  //   ←  ↑           → previous position in history
+  //   →  ↓           → next position in history
+  // Heatmap is also auto-on while a piece is being dragged, so the
+  // Shift+drag interaction is always "drag = preview" without extra keys.
   useEffect(() => {
     function onKeyDown(e) {
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'Shift') setShowHeatmap(true);
+      if (e.key === 'Shift') {
+        setShowHeatmap(true);
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        if (historyIndex > 0) {
+          const newIndex = historyIndex - 1;
+          setHistoryIndex(newIndex);
+          lastFetchedFen.current = '';
+          setFen(moveHistory[newIndex].fen);
+          setInputFen(moveHistory[newIndex].fen);
+        }
+        e.preventDefault();
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        if (historyIndex < moveHistory.length - 1) {
+          const newIndex = historyIndex + 1;
+          setHistoryIndex(newIndex);
+          lastFetchedFen.current = '';
+          setFen(moveHistory[newIndex].fen);
+          setInputFen(moveHistory[newIndex].fen);
+        }
+        e.preventDefault();
+      }
     }
     function onKeyUp(e) {
       if (e.key === 'Shift') setShowHeatmap(false);
@@ -298,7 +315,12 @@ export default function Board() {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, []);
+  }, [historyIndex, moveHistory]);
+
+  // The heatmap should be visible whenever (a) the user is holding Shift
+  // OR (b) a piece is currently being dragged. The drag-preview is the
+  // killer feature — auto-enabling avoids the "Shift breaks drag" issue.
+  const heatmapVisible = showHeatmap || isDragging;
 
   // Handle move click in analysis panel
   const handleMoveClick = (move, index) => {
@@ -490,6 +512,40 @@ export default function Board() {
     } catch { return new Set(); }
   }, [selectedSquare, fen]);
 
+  // The engine's #1 destination if the top move starts on the selected
+  // square. Used to draw a green ring as a "best move" hint.
+  const topMoveDest = useMemo(() => {
+    if (!selectedSquare || !topMoves || topMoves.length === 0) return null;
+    const top = topMoves[0];
+    if (!top?.move || top.move.slice(0, 2) !== selectedSquare) return null;
+    return top.move.slice(2, 4);
+  }, [selectedSquare, topMoves]);
+
+  // Last-move analysis (shown at the top of the analysis panel). Whenever
+  // the user lands on a position that was reached by a move (i.e. not the
+  // starting position), explain that move.
+  const [lastMoveAnalysis, setLastMoveAnalysis] = useState(null);
+
+  useEffect(() => {
+    if (historyIndex === 0) { setLastMoveAnalysis(null); return; }
+    const prev = moveHistory[historyIndex - 1];
+    const curr = moveHistory[historyIndex];
+    if (!prev || !curr || !curr.san) return;
+    let moveUCI;
+    try {
+      const game = new Chess(prev.fen);
+      const m = game.moves({ verbose: true }).find(m => m.san === curr.san);
+      if (!m) return;
+      moveUCI = m.from + m.to + (m.promotion || '');
+    } catch { return; }
+    let cancelled = false;
+    setLastMoveAnalysis({ loading: true, san: curr.san });
+    explainMoveAt(prev.fen, moveUCI)
+      .then(r => { if (!cancelled) setLastMoveAnalysis({ ...r, loading: false }); })
+      .catch(() => { if (!cancelled) setLastMoveAnalysis(null); });
+    return () => { cancelled = true; };
+  }, [historyIndex, moveHistory]);
+
   // Hanging-piece detector. A piece is "hanging" if it's attacked AND its
   // cheapest attacker is less valuable than the piece itself (so the
   // exchange loses material). King is never marked.
@@ -602,12 +658,16 @@ export default function Board() {
           ...(styles[m.to] || {}),
           backgroundColor: isDragTarget ? 'rgba(96, 165, 250, 0.42)' : undefined,
           backgroundImage: indicator,
+          // Green inset ring on the engine's top recommended destination.
+          boxShadow: m.to === topMoveDest
+            ? 'inset 0 0 0 3px rgba(134, 239, 172, 0.85)'
+            : styles[m.to]?.boxShadow,
         };
       }
     }
 
     return styles;
-  }, [selectedSquare, fen, showPreview, dragHover, hangingSet]);
+  }, [selectedSquare, fen, showPreview, dragHover, hangingSet, topMoveDest]);
 
   // Square-to-pixel mapping helper, accounting for board flip.
   function squarePxPosition(square) {
@@ -648,7 +708,7 @@ export default function Board() {
   // hover — the change in worth versus the current position. Color is
   // piece-relative: same cp delta is more concerning on lower-value pieces.
   const valueLabels = useMemo(() => {
-    if (!showHeatmap) return [];
+    if (!heatmapVisible) return [];
 
     if (showPreview) {
       // DELTA mode (calibration=3) — change in each piece's worth vs. the
@@ -685,7 +745,7 @@ export default function Board() {
         label: fmtDelta(p.delta_pawns),
       }));
   }, [
-    showHeatmap, heatmapPieces, previewHeatmap,
+    heatmapVisible, heatmapPieces, previewHeatmap,
     showPreview, dragHover, selectedSquare, orientation, legalDestSet,
   ]);
 
@@ -693,7 +753,7 @@ export default function Board() {
   // it landed here. Color scaled by the moving piece's typical value so a
   // -80cp drop on a rook reads lighter than the same drop on a bishop.
   const destinationLabels = useMemo(() => {
-    if (!showHeatmap || !selectedSquare || showPreview) return [];
+    if (!heatmapVisible || !selectedSquare || showPreview) return [];
     const currentValueCp =
       heatmapPieces?.pieces.find(p => p.square === selectedSquare)?.delta_cp ?? 0;
     return Object.entries(destValues).map(([dest, info]) => {
@@ -706,7 +766,7 @@ export default function Board() {
       };
     });
   }, [
-    showHeatmap, selectedSquare, destValues,
+    heatmapVisible, selectedSquare, destValues,
     heatmapPieces, showPreview, orientation, selectedPieceType,
   ]);
 
@@ -762,6 +822,58 @@ export default function Board() {
           </div>
           <div style={{ fontSize: '12px', color: '#71717a' }}>
             {sideToMove === 'w' ? 'White' : 'Black'} to move
+          </div>
+
+          {/* King safety: simple heuristic — friendly pawns within 2 squares
+              of the king minus enemy attackers within 3 squares, plus a
+              small penalty for an exposed center king. Quick visual cue. */}
+          <div style={{ display: 'flex', gap: '4px' }} title="King safety: friendly pawns nearby minus enemy attackers (rough)">
+            {(() => {
+              try {
+                const game = new Chess(fen);
+                const board = game.board();
+                let wKing = null, bKing = null;
+                for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+                  const p = board[r][f];
+                  if (!p || p.type !== 'k') continue;
+                  if (p.color === 'w') wKing = { r, f };
+                  else bKing = { r, f };
+                }
+                function safety(kingPos, color) {
+                  if (!kingPos) return 0;
+                  const enemy = color === 'w' ? 'b' : 'w';
+                  let pawns = 0, attackers = 0;
+                  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+                    const p = board[r][f];
+                    if (!p) continue;
+                    const dist = Math.max(Math.abs(r - kingPos.r), Math.abs(f - kingPos.f));
+                    if (p.type === 'p' && p.color === color && dist <= 2) pawns++;
+                    if (p.color === enemy && p.type !== 'p' && p.type !== 'k' && dist <= 3) attackers++;
+                  }
+                  // Center penalty: file 2-5, rank 2-5
+                  const center = (kingPos.f >= 2 && kingPos.f <= 5 && kingPos.r >= 2 && kingPos.r <= 5);
+                  return pawns - attackers - (center ? 2 : 0);
+                }
+                const w = safety(wKing, 'w');
+                const b = safety(bKing, 'b');
+                const renderBadge = (val, label) => (
+                  <span title={`${label} king safety`} style={{
+                    fontSize: '10px',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontWeight: 700,
+                    padding: '3px 6px',
+                    borderRadius: '2px',
+                    backgroundColor: 'rgba(39, 39, 42, 0.8)',
+                    color: val >= 2 ? '#86efac' : val <= -1 ? '#fca5a5' : '#a1a1aa',
+                    letterSpacing: '-0.02em',
+                    border: `1px solid ${val >= 2 ? 'rgba(134, 239, 172, 0.3)' : val <= -1 ? 'rgba(252, 165, 165, 0.3)' : '#3f3f46'}`,
+                  }}>
+                    {label === 'White' ? '♔' : '♚'} {val >= 0 ? '+' : ''}{val}
+                  </span>
+                );
+                return <>{renderBadge(w, 'White')}{renderBadge(b, 'Black')}</>;
+              } catch { return null; }
+            })()}
           </div>
 
           {/* Material balance badge — quick read on who's up material. */}
@@ -960,7 +1072,7 @@ export default function Board() {
               Both flavors share the same big-centered design: ~22px bold
               monospace, color interpolated from white toward saturated
               green/red as the magnitude grows, no shadow. */}
-          {showHeatmap && (valueLabels.length > 0 || destinationLabels.length > 0) && (
+          {heatmapVisible && (valueLabels.length > 0 || destinationLabels.length > 0) && (
             <div style={{
               position: 'absolute',
               top: 0, left: 0, width: '100%', height: '100%',
@@ -979,8 +1091,10 @@ export default function Board() {
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                   color: v.color,
                   letterSpacing: '-0.04em',
-                  WebkitTextStrokeWidth: '2.5px',
-                  WebkitTextStrokeColor: squareColor(v.square),
+                  // Heavy black stroke + bright fill = subtitle-style
+                  // legibility on any square color or piece icon.
+                  WebkitTextStrokeWidth: '4px',
+                  WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.92)',
                   paintOrder: 'stroke fill',
                 }}>
                   {v.label}
@@ -999,8 +1113,10 @@ export default function Board() {
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                   color: v.color,
                   letterSpacing: '-0.04em',
-                  WebkitTextStrokeWidth: '2.5px',
-                  WebkitTextStrokeColor: squareColor(v.square),
+                  // Heavy black stroke + bright fill = subtitle-style
+                  // legibility on any square color or piece icon.
+                  WebkitTextStrokeWidth: '4px',
+                  WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.92)',
                   paintOrder: 'stroke fill',
                 }}>
                   {v.label}
@@ -1012,7 +1128,7 @@ export default function Board() {
           {/* Subtle "computing values" indicator while the engine works on
               the heatmap. Sits in the top-left of the board, doesn't block
               anything. */}
-          {showHeatmap && heatmapLoading && !heatmapPieces && (
+          {heatmapVisible && heatmapLoading && !heatmapPieces && (
             <div style={{
               position: 'absolute',
               top: '6px',
@@ -1051,10 +1167,100 @@ export default function Board() {
             fontSize: '12px',
             fontWeight: 600,
             color: '#e4e4e7',
-            textTransform: 'uppercase'
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
           }}>
             Analysis
           </div>
+
+          {/* Last move card — shows the move that got us to the current
+              position with its quality classification + tagline. */}
+          {lastMoveAnalysis && (
+            <div style={{
+              padding: '12px 16px',
+              borderBottom: '1px solid #27272a',
+              backgroundColor: 'rgba(15, 23, 42, 0.4)',
+            }}>
+              <div style={{
+                fontSize: '9px',
+                color: '#71717a',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                marginBottom: '6px',
+                fontWeight: 600,
+              }}>
+                Last move
+              </div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '4px',
+              }}>
+                <span style={{
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  color: '#fafafa',
+                  letterSpacing: '-0.02em',
+                }}>
+                  {lastMoveAnalysis.san}
+                </span>
+                {lastMoveAnalysis.loading ? (
+                  <span style={{ fontSize: '10px', color: '#71717a', textTransform: 'uppercase' }}>
+                    Analyzing…
+                  </span>
+                ) : lastMoveAnalysis.quality && (
+                  <span style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: getQualityColor(lastMoveAnalysis.quality),
+                    border: `1px solid ${getQualityColor(lastMoveAnalysis.quality)}`,
+                    padding: '2px 6px',
+                    borderRadius: '2px',
+                  }}>
+                    {lastMoveAnalysis.quality}
+                  </span>
+                )}
+                {!lastMoveAnalysis.loading && typeof lastMoveAnalysis.winRateLoss === 'number' && lastMoveAnalysis.winRateLoss >= 1 && (
+                  <span style={{ fontSize: '10px', color: '#a1a1aa' }}>
+                    −{lastMoveAnalysis.winRateLoss.toFixed(1)}% win-rate
+                  </span>
+                )}
+              </div>
+              {!lastMoveAnalysis.loading && lastMoveAnalysis.summary && (
+                <div style={{ fontSize: '12px', color: '#d4d4d8', marginBottom: '3px' }}>
+                  {lastMoveAnalysis.summary}
+                </div>
+              )}
+              {!lastMoveAnalysis.loading && lastMoveAnalysis.details && (
+                <div style={{ fontSize: '11px', color: '#a1a1aa', lineHeight: 1.4 }}>
+                  {lastMoveAnalysis.details}
+                </div>
+              )}
+              {!lastMoveAnalysis.loading && lastMoveAnalysis.bestMoveSan && !lastMoveAnalysis.isBestMove && (
+                <div style={{
+                  marginTop: '6px',
+                  fontSize: '11px',
+                  color: '#a1a1aa',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                }}>
+                  Better was{' '}
+                  <span style={{
+                    color: '#86efac',
+                    fontWeight: 700,
+                    padding: '1px 5px',
+                    borderRadius: '2px',
+                    backgroundColor: 'rgba(134, 239, 172, 0.12)',
+                  }}>
+                    {lastMoveAnalysis.bestMoveSan}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Top Moves List */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>

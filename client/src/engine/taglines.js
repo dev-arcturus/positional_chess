@@ -510,20 +510,128 @@ export function quickExplain(fenBefore, moveUCI) {
     }
   }
 
-  // Tempo: develops while attacking something.
-  if (motifs.includes('develops') && (motifs.includes('threatens') || motifs.includes('attacks_king'))) {
+  // ── Defends a previously-hanging piece ──────────────────────────────────
+  // Compare hanging-piece sets before/after for our own pieces.
+  {
+    const board = chessBefore.board();
+    let defendedSquare = null;
+    for (let r = 0; r < 8 && !defendedSquare; r++) {
+      for (let f = 0; f < 8 && !defendedSquare; f++) {
+        const p = board[r][f];
+        if (!p || p.color !== moverColor || p.type === 'k') continue;
+        const sq = frToSquare(f, 7 - r);
+        if (sq === from) continue; // the moving piece doesn't count
+        if (isHangingApprox(chessBefore, sq) && !isHangingApprox(chessAfter, sq)) {
+          defendedSquare = { sq, type: p.type };
+        }
+      }
+    }
+    if (defendedSquare) {
+      add('defends', `Defends the ${PIECE_NAME[defendedSquare.type]}`);
+    }
+  }
+
+  // ── Creates a new threat ────────────────────────────────────────────────
+  // An opponent piece that wasn't hanging before is now hanging.
+  {
+    const board = chessAfter.board();
+    let newlyHanging = null;
+    for (let r = 0; r < 8 && !newlyHanging; r++) {
+      for (let f = 0; f < 8 && !newlyHanging; f++) {
+        const p = board[r][f];
+        if (!p || p.color !== opponentColor || p.type === 'k') continue;
+        const sq = frToSquare(f, 7 - r);
+        if (isHangingApprox(chessAfter, sq) && !isHangingApprox(chessBefore, sq)) {
+          newlyHanging = { sq, type: p.type };
+        }
+      }
+    }
+    if (newlyHanging && !motifs.includes('threatens') && !motifs.includes('fork')) {
+      add('creates_threat', `Creates a threat on the ${PIECE_NAME[newlyHanging.type]}`);
+    }
+  }
+
+  // ── Tempo: develops while attacking something ──────────────────────────
+  if (motifs.includes('develops')
+      && (motifs.includes('threatens') || motifs.includes('attacks_king')
+          || motifs.includes('creates_threat'))) {
     add('tempo', null);
   }
 
+  // ── Maneuvers / repositions: a meaningful PST gain even with no
+  //    tactical action. Used to make the fallback richer than "Quiet X". ─
+  // (Computed but only applied as fallback if nothing else fires.)
+  function pstFor(pieceType, square, color) {
+    // Tiny embedded PST (matches the explainer's): just the central
+    // bias for knight + bishop is enough to call out activity gains.
+    const KN = [
+      [-50,-40,-30,-30,-30,-30,-40,-50],
+      [-40,-20,  0,  5,  5,  0,-20,-40],
+      [-30,  5, 10, 15, 15, 10,  5,-30],
+      [-30,  0, 15, 20, 20, 15,  0,-30],
+      [-30,  5, 15, 20, 20, 15,  5,-30],
+      [-30,  0, 10, 15, 15, 10,  0,-30],
+      [-40,-20,  0,  0,  0,  0,-20,-40],
+      [-50,-40,-30,-30,-30,-30,-40,-50],
+    ];
+    const BI = [
+      [-20,-10,-10,-10,-10,-10,-10,-20],
+      [-10,  5,  0,  0,  0,  0,  5,-10],
+      [-10, 10, 10, 10, 10, 10, 10,-10],
+      [-10,  0, 10, 10, 10, 10,  0,-10],
+      [-10,  5,  5, 10, 10,  5,  5,-10],
+      [-10,  0,  5, 10, 10,  5,  0,-10],
+      [-10,  0,  0,  0,  0,  0,  0,-10],
+      [-20,-10,-10,-10,-10,-10,-10,-20],
+    ];
+    const tab = pieceType === 'n' ? KN : pieceType === 'b' ? BI : null;
+    if (!tab) return 0;
+    const [f, r] = squareToFR(square);
+    const row = color === 'w' ? 7 - r : r;
+    return tab[row][f];
+  }
+  let activityGain = 0;
+  if (['n', 'b'].includes(movingPiece.type)) {
+    activityGain = pstFor(movingPiece.type, to, moverColor)
+                 - pstFor(movingPiece.type, from, moverColor);
+  }
+
+  // ── Direction hints (used as fallback flavor) ───────────────────────────
+  // Heads toward kingside / queenside / center based on file.
+  const [tf, tr] = squareToFR(to);
+  const [ff, fr] = squareToFR(from);
+  let directionHint = null;
+  const oppKingSq = findKing(chessAfter, opponentColor);
+  if (oppKingSq) {
+    const [okf] = squareToFR(oppKingSq);
+    const closerToKing = Math.abs(tf - okf) < Math.abs(ff - okf)
+                       || (chebyshev(to, oppKingSq) < chebyshev(from, oppKingSq));
+    if (closerToKing) {
+      directionHint = okf >= 4 ? 'Heads toward the kingside' : 'Heads toward the queenside';
+    }
+  }
+  if (!directionHint) {
+    const distFromCenter = (sq) => {
+      const [f, r] = squareToFR(sq);
+      return Math.max(Math.abs(f - 3.5), Math.abs(r - 3.5));
+    };
+    if (distFromCenter(to) < distFromCenter(from) - 0.5) {
+      directionHint = 'Repositions toward the center';
+    }
+  }
+
   // ── Compose tagline (priority order) ────────────────────────────────────
+  // Higher = more important / surprising. We pick the top 1-2 phrases.
   const PRIORITY = [
     'checkmate', 'sacrifice', 'fork', 'discovered_check', 'pin', 'skewer',
-    'queen_trade', 'piece_trade', 'exchange_sacrifice', 'capture',
-    'check', 'castles_kingside', 'castles_queenside', 'promotion', 'en_passant',
-    'doubles_rooks', 'rook_seventh', 'open_file', 'semi_open_file', 'outpost',
-    'fianchetto', 'battery', 'develops', 'centralizes', 'attacks_king',
+    'queen_trade', 'exchange_sacrifice', 'piece_trade', 'capture',
+    'creates_threat', 'threatens', 'check',
+    'castles_kingside', 'castles_queenside', 'promotion', 'en_passant',
+    'doubles_rooks', 'rook_seventh', 'open_file', 'semi_open_file',
+    'outpost', 'fianchetto', 'battery', 'attacks_king',
+    'develops', 'centralizes', 'defends',
     'pawn_break', 'pawn_lever', 'passed_pawn', 'pawn_storm',
-    'doubled_pawns_them', 'isolated_pawn', 'threatens', 'hangs',
+    'doubled_pawns_them', 'isolated_pawn', 'hangs',
     'stalemate', 'threefold_repetition', 'fifty_move', 'insufficient_material',
   ];
   const orderedPhrases = [];
@@ -546,11 +654,43 @@ export function quickExplain(fenBefore, moveUCI) {
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
+  // Richer fallback than "Quiet X move": pick the most informative thing
+  // we can say about the move based on positional cues we already
+  // computed (PST activity, direction toward king/center).
+  function fallbackTagline() {
+    if (activityGain >= 20) {
+      return `Improves the ${PIECE_NAME[movingPiece.type]}'s activity`;
+    }
+    if (activityGain <= -20) {
+      return `Retreats the ${PIECE_NAME[movingPiece.type]}`;
+    }
+    if (directionHint) return directionHint;
+    if (movingPiece.type === 'p') {
+      const [, tr2] = squareToFR(to);
+      const onSeventh = (moverColor === 'w' && tr2 === 6) || (moverColor === 'b' && tr2 === 1);
+      if (onSeventh) return 'Pushes the pawn to the seventh rank';
+      return `Pushes the ${fileLetter(squareToFR(to)[0])}-pawn`;
+    }
+    if (['q', 'r'].includes(movingPiece.type)) {
+      return `Repositions the ${PIECE_NAME[movingPiece.type]} to ${to}`;
+    }
+    return `Maneuvers the ${PIECE_NAME[movingPiece.type]} to ${to}`;
+  }
+
   let tagline;
   if (motifPhrases.length === 0) {
-    tagline = `Quiet ${PIECE_NAME[movingPiece.type]} move`;
+    tagline = fallbackTagline();
   } else if (motifPhrases.length === 1) {
-    tagline = motifPhrases[0].phrase;
+    // Even with one motif, append a flavor hint if it adds info.
+    const main = motifPhrases[0].phrase;
+    if (directionHint
+        && !['checkmate','fork','pin','skewer','sacrifice'].includes(motifPhrases[0].motif)
+        && motifPhrases[0].motif !== 'castles_kingside'
+        && motifPhrases[0].motif !== 'castles_queenside') {
+      tagline = `${main}, ${directionHint.toLowerCase()}`;
+    } else {
+      tagline = main;
+    }
   } else {
     tagline = motifPhrases.slice(0, 2).map(x => x.phrase).join(', ');
   }

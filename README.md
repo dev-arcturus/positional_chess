@@ -32,10 +32,13 @@ This is the kind of analysis cockpit you'd find on Lichess, scaled down to a sin
 
 - **Browser-side Stockfish 18 (lite, single-threaded WASM)** — depth 12–14 search, MultiPV up to 10, principal variation extraction. ~7 MB WASM, gzipped on the wire.
 - **No backend** — pure static deploy. Works offline once the WASM has been fetched once.
-- **Hold ⇧ Shift to reveal positional values.** The board stays clean by default; pressing Shift overlays a numeric badge on every piece showing its contextual worth (in pawns), color-interpolated by significance.
+- **Hold ⇧ Shift (or just start dragging) to reveal positional values.** The board stays clean by default; pressing Shift — or grabbing any piece — overlays a numeric badge on every piece showing its contextual worth (in pawns), color-interpolated by significance.
 - **Live "what-if" preview during drag.** Hover a piece over a legal destination — every label on the board updates to show how each piece's worth changes if you complete the move. Includes the opponent's pieces.
 - **Hanging-piece warnings.** Any piece whose cheapest attacker is less valuable than the piece itself gets a red inset border, so you never miss a loose piece.
-- **Material balance + phase indicator** in the toolbar — quick read on who's up material and whether it's an opening / middlegame / endgame.
+- **Best-move green ring.** When you pick up or click a piece and the engine's top recommendation starts on that square, the destination is outlined in green — instant "is this the move?" cue.
+- **Material balance + king safety + phase indicator** in the toolbar — quick reads on who's up material, who's exposed, and whether it's an opening / middlegame / endgame.
+- **Last-move card at the top of the analysis panel.** The move that got you to the current position is shown with its full classification (`brilliant` / `great` / `best` / `good` / `neutral` / `inaccuracy` / `mistake` / `blunder`), summary, details, and "better was X" alternative.
+- **Arrow-key navigation.** ←/↑ for previous position, →/↓ for next.
 - **Top moves panel with motif taglines.** Each candidate move comes with a short positional summary ("Develops the knight, threatens the bishop") generated locally without engine calls. Click a move and the next 2 plies of the engine's PV each get their own one-liner too.
 - **Move explainer** — Lichess-style win-rate sigmoid + tactical motif detection. `brilliant` requires top-1 engine choice + real (SEE-based) sacrifice + win-rate maintained.
 - **Click-to-select + drag-and-drop** with Lichess-style legal-move dots and capture rings. Dots also appear underneath a piece while it's being dragged.
@@ -288,11 +291,24 @@ That matches intuition: an 80 cp drop is small for a queen, big for a pawn.
 ## Label rendering
 
 - Big (22 px) bold monospace, centered in each square.
-- No drop-shadow. Instead a 2.5 px text-stroke painted **before** the fill,
-  in the **square's own color** (cream `#f0d9b5` for light, brown `#b58863`
-  for dark). The stroke makes the label legible on any tile without
-  fighting with the piece icon underneath.
-- `paint-order: stroke fill` so the colored fill stays clean on top.
+- No drop-shadow. Instead a heavy (4 px) text-stroke painted **before** the
+  fill in opaque black (`rgba(0, 0, 0, 0.92)`), with bright fills (white
+  for ~0, green-300 / red-300 for saturated swings). `paint-order: stroke
+  fill` keeps the colored fill crisp on top of the stroke. This is the
+  same approach used for legible subtitles on photo/video — it works on
+  any underlying square color or piece icon without competing with them.
+
+## Keyboard shortcuts
+
+| Key                | Action                                       |
+| ------------------ | -------------------------------------------- |
+| `⇧ Shift` (hold)   | Reveal piece-value heatmap                   |
+| `←` or `↑`         | Previous position (history)                  |
+| `→` or `↓`         | Next position (history)                      |
+
+Heatmap is **also** automatically on while a piece is being dragged, so
+the Shift-and-drag combo doesn't fight with the browser's drag handlers
+— you can just grab a piece and the live preview kicks in.
 
 ## Motif catalog (taglines)
 
@@ -343,6 +359,27 @@ worth less than the piece itself, the piece is hanging (cheapest exchange
 loses material). Hanging squares get a red inset `boxShadow` so loose
 pieces are immediately visible.
 
+## Best-move green ring
+
+When you click or pick up a piece, we look at the engine's top move from
+the current top-moves response. If it starts on the same square, the
+destination square gets a **green inset ring** (the same trick used for
+hanging pieces but in green, not red). This gives an instant "is this
+the move?" answer without having to read the analysis panel.
+
+## King safety badges
+
+Pure-FEN heuristic, no engine calls. For each king:
+
+```
+safety = (friendly pawns within 2 squares of king)
+       − (enemy non-pawn, non-king pieces within 3 squares)
+       − (king is in central files & ranks ? 2 : 0)
+```
+
+Displayed as a `♔ +N` / `♚ −N` badge near the eval — green for safe,
+red for exposed.
+
 ## Material balance + phase
 
 Both are derived from the FEN with no engine calls:
@@ -352,6 +389,19 @@ Both are derived from the FEN with no engine calls:
 - **Phase**: `opening` if non-pawn-non-king material is ≥ 30 and move
   number ≤ 12, `endgame` if material ≤ 14, otherwise `middlegame`. Shows
   as an uppercase tag in the header.
+
+## Last-move analysis card
+
+Whenever the user lands on a non-starting position (move played, history
+nav, FEN load), the analysis panel's top card runs the full
+`explainMoveAt` on the move that produced the current position and shows:
+
+- **Quality badge**: `brilliant` / `great` / `best` / `good` / `neutral`
+  / `inaccuracy` / `mistake` / `blunder` — color-coded.
+- **Win-rate loss vs. best** if not the engine's top choice.
+- Summary + details (uses the same `explainer.js` pipeline that drives
+  the click-a-move-to-explain flow).
+- "Better was X" line when the played move wasn't best.
 
 ## How the Analysis Pipeline Works
 
