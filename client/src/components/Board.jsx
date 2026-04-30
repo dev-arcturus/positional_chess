@@ -11,6 +11,21 @@ import {
   explainMoveAt,
 } from '../engine/analysis';
 import { getPieceValues, streamDestinationValues } from '../engine/heatmap';
+import { findOpeningFromHistory } from '../engine/openings';
+
+// Replace the leading piece letter in a SAN with the matching unicode chess
+// glyph (white pieces for white moves, black for black). Pawns are left as
+// algebraic ("e4", "exd5"). O-O / O-O-O are passed through unchanged.
+function sanWithPieces(san, isWhiteMove) {
+  if (!san) return san;
+  if (san.startsWith('O-')) return san;
+  const head = san[0];
+  const map = isWhiteMove
+    ? { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘' }
+    : { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞' };
+  if (map[head]) return map[head] + san.slice(1);
+  return san;
+}
 
 // Standard piece values used to scale "how much should we worry about this
 // change?" per piece. An 80cp drop on a rook is small (16%); on a bishop
@@ -121,6 +136,10 @@ export default function Board() {
 
   // (Hint state removed — the analysis panel on the right shows the top
   // moves with arrows; a separate Hint button is redundant.)
+
+  // Opening name (looked up by FEN over the entire history; once you're
+  // out of book, the last-known opening sticks).
+  const [openingName, setOpeningName] = useState(null);
 
   // Click-to-select with legal-move indicators (also set during drag).
   const [selectedSquare, setSelectedSquare] = useState(null);
@@ -254,6 +273,14 @@ export default function Board() {
     } catch { /* illegal */ }
     return null;
   }
+
+  // Opening lookup walks the move history backwards and surfaces the most
+  // recent matching position, so "Italian Game" stays visible even after
+  // you're out of book.
+  useEffect(() => {
+    const fens = moveHistory.slice(0, historyIndex + 1).map(m => m.fen);
+    setOpeningName(findOpeningFromHistory(fens));
+  }, [historyIndex, moveHistory]);
 
   // Keyboard shortcuts:
   //   ⇧ Shift (hold) → reveal piece-value heatmap
@@ -654,7 +681,7 @@ export default function Board() {
 
   // Square-to-pixel mapping helper, accounting for board flip.
   function squarePxPosition(square) {
-    const BOARD_PX = 520;
+    const BOARD_PX = 600;
     const SQ = BOARD_PX / 8;
     const file = square.charCodeAt(0) - 'a'.charCodeAt(0);
     const rank = parseInt(square[1], 10) - 1;
@@ -809,7 +836,7 @@ export default function Board() {
         const rank = 7 - k.r;
         let col = file, row = 7 - rank;
         if (orientation === 'black') { col = 7 - col; row = 7 - row; }
-        const SQ = 520 / 8;
+        const SQ = 600 / 8;
         labels.push({
           square: k.sq,
           left: col * SQ,
@@ -937,350 +964,327 @@ export default function Board() {
       padding: '24px',
       gap: '16px'
     }}>
-      {/* Header */}
+      {/* Main 2-column grid: eval bar + board on the left, analysis on the right. */}
       <div style={{
-        width: '100%',
-        maxWidth: '820px',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'rgba(24, 24, 27, 0.8)',
-        padding: '12px 20px',
-        borderRadius: '3px',
-        border: '1px solid #27272a'
+        gap: '12px',
+        alignItems: 'flex-start',
+        width: '100%',
+        maxWidth: '1040px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ minWidth: '90px' }}>
-            <div style={{ fontSize: '10px', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Eval</div>
-            <div style={{
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              fontSize: '20px',
-              fontWeight: 'bold',
-              minWidth: '90px',
-              whiteSpace: 'nowrap',
-              color: loading || topMovesLoading
-                ? '#71717a'
-                : evalMate !== null
-                  ? (evalMate > 0 ? '#4ade80' : '#f87171')
-                  : (evalCp > 50 ? '#4ade80' : evalCp < -50 ? '#f87171' : '#e4e4e7')
-            }}>
-              {topMovesLoading
-                ? '--'
-                : gameResult
-                  ? gameResult
-                  : evalMate !== null
-                    ? `${evalMate > 0 ? '' : '-'}M${Math.abs(evalMate)}`
-                    : (evalCp !== null ? (evalCp / 100).toFixed(2) : '--')}
-            </div>
+        {/* LEFT: eval bar flush with the board */}
+        <div style={{ display: 'flex', alignItems: 'stretch' }}>
+          <div style={{ width: '24px', height: '600px' }}>
+            <EvalBar evalCp={evalCp} mate={evalMate} result={gameResult} loading={topMovesLoading} />
           </div>
-          <div style={{ fontSize: '12px', color: '#71717a' }}>
-            {sideToMove === 'w' ? 'White' : 'Black'} to move
-          </div>
-
-          {/* Material balance badge — quick read on who's up material. */}
-          {Math.abs(materialDelta) >= 0.1 && (
-            <div style={{
-              fontSize: '11px',
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              fontWeight: 700,
-              padding: '3px 7px',
-              borderRadius: '2px',
-              backgroundColor: materialDelta > 0 ? 'rgba(74, 222, 128, 0.12)' : 'rgba(248, 113, 113, 0.12)',
-              color: materialDelta > 0 ? '#86efac' : '#fca5a5',
-              letterSpacing: '-0.02em',
-            }}
-              title={materialDelta > 0 ? 'White is up material' : 'Black is up material'}
-            >
-              {materialDelta > 0 ? '+' : ''}{materialDelta.toFixed(1)}
-            </div>
-          )}
-
-          {/* Game phase indicator. */}
           <div style={{
-            fontSize: '10px',
-            color: '#71717a',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-            fontWeight: 600,
+            position: 'relative',
+            width: '600px',
+            height: '600px',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            border: '1px solid #27272a',
           }}>
-            {phase}
-          </div>
+            <Chessboard
+              position={fen}
+              onPieceDrop={onDrop}
+              onSquareClick={onSquareClick}
+              onPieceDragBegin={onPieceDragBegin}
+              onPieceDragEnd={onPieceDragEnd}
+              onDragOverSquare={onDragOverSquare}
+              boardOrientation={orientation}
+              customArrows={customArrows}
+              customSquareStyles={customSquareStyles}
+              animationDuration={150}
+              arePiecesDraggable={true}
+              boardWidth={600}
+            />
 
-          {/* Shift-key hint: piece-value heatmap is gated behind holding
-              Shift, so the board stays clean by default. Show a small
-              indicator that lights up when Shift is actually held. */}
-          <div style={{
-            fontSize: '10px',
-            color: showHeatmap ? '#f97316' : '#52525b',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-            border: `1px solid ${showHeatmap ? '#f97316' : '#3f3f46'}`,
-            padding: '3px 6px',
-            borderRadius: '2px',
-            fontWeight: 600,
-            transition: 'color 0.1s, border-color 0.1s',
-          }}>
-            ⇧ Shift {showHeatmap ? '· Heatmap on' : 'for piece values'}
+            {/* Numeric overlays (piece-worth + destination-change + king safety) */}
+            {heatmapVisible && (valueLabels.length > 0 || destinationLabels.length > 0 || kingSafetyLabels.length > 0) && (
+              <div style={{
+                position: 'absolute',
+                top: 0, left: 0, width: '100%', height: '100%',
+                pointerEvents: 'none', zIndex: 2,
+              }}>
+                {valueLabels.map(v => (
+                  <div key={`val-${v.square}`} style={{
+                    position: 'absolute',
+                    left: `${v.left}px`, top: `${v.top}px`,
+                    width: `${v.size}px`, height: `${v.size}px`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    fontWeight: 800,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    color: v.color,
+                    letterSpacing: '-0.04em',
+                    WebkitTextStrokeWidth: '4px',
+                    WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.92)',
+                    paintOrder: 'stroke fill',
+                  }}>
+                    {v.label}
+                  </div>
+                ))}
+                {destinationLabels.map(v => (
+                  <div key={`dest-${v.square}`} style={{
+                    position: 'absolute',
+                    left: `${v.left}px`, top: `${v.top}px`,
+                    width: `${v.size}px`, height: `${v.size}px`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    fontWeight: 800,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    color: v.color,
+                    letterSpacing: '-0.04em',
+                    WebkitTextStrokeWidth: '4px',
+                    WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.92)',
+                    paintOrder: 'stroke fill',
+                  }}>
+                    {v.label}
+                  </div>
+                ))}
+                {kingSafetyLabels.map(v => (
+                  <div key={`king-${v.square}`} style={{
+                    position: 'absolute',
+                    left: `${v.left}px`, top: `${v.top}px`,
+                    width: `${v.size}px`, height: `${v.size}px`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '36px',
+                    fontWeight: 900,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    color: v.color,
+                    letterSpacing: '-0.04em',
+                    WebkitTextStrokeWidth: '5px',
+                    WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.94)',
+                    paintOrder: 'stroke fill',
+                  }}>
+                    {v.label}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Computing-values pill */}
+            {heatmapVisible && heatmapLoading && !heatmapPieces && (
+              <div style={{
+                position: 'absolute',
+                top: '6px',
+                left: '8px',
+                fontSize: '10px',
+                fontWeight: 600,
+                color: 'rgba(255, 255, 255, 0.85)',
+                backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                padding: '3px 8px',
+                borderRadius: '999px',
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase',
+                pointerEvents: 'none',
+                zIndex: 3,
+              }}>
+                Computing values…
+              </div>
+            )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {/* History navigation */}
-          <button
-            onClick={goBack}
-            disabled={historyIndex === 0}
-            title="Previous position"
-            style={{
-              padding: '9px',
-              borderRadius: '3px',
+        {/* RIGHT: analysis column */}
+        <div style={{
+          width: '380px',
+          height: '600px',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: '#18181b',
+          border: '1px solid #27272a',
+          borderRadius: '3px',
+          overflow: 'hidden',
+        }}>
+          {/* Toolbar buttons */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '8px',
+            borderBottom: '1px solid #27272a',
+          }}>
+            <button onClick={goBack} disabled={historyIndex === 0} title="Previous (← / ↑)" style={{
+              padding: '7px',
+              borderRadius: '2px',
               backgroundColor: '#27272a',
               color: historyIndex === 0 ? '#52525b' : '#a1a1aa',
               border: 'none',
               cursor: historyIndex === 0 ? 'default' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <button
-            onClick={goForward}
-            disabled={historyIndex >= moveHistory.length - 1}
-            title="Next position"
-            style={{
-              padding: '9px',
-              borderRadius: '3px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <ChevronLeft size={14} />
+            </button>
+            <button onClick={goForward} disabled={historyIndex >= moveHistory.length - 1} title="Next (→ / ↓)" style={{
+              padding: '7px',
+              borderRadius: '2px',
               backgroundColor: '#27272a',
               color: historyIndex >= moveHistory.length - 1 ? '#52525b' : '#a1a1aa',
               border: 'none',
               cursor: historyIndex >= moveHistory.length - 1 ? 'default' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <ChevronRight size={16} />
-          </button>
-
-          <div style={{ width: '1px', backgroundColor: '#3f3f46', margin: '0 4px' }} />
-
-          <button
-            onClick={loadRandomPosition}
-            title="Load a random plausible position"
-            style={{
-              padding: '9px',
-              borderRadius: '3px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <ChevronRight size={14} />
+            </button>
+            <div style={{ flex: 1 }} />
+            <button onClick={loadRandomPosition} title="Random plausible position" style={{
+              padding: '7px',
+              borderRadius: '2px',
               backgroundColor: '#27272a',
               color: '#a1a1aa',
               border: 'none',
               cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Shuffle size={16} />
-          </button>
-          <button onClick={flipBoard} title="Flip board" style={{
-            padding: '9px',
-            borderRadius: '3px',
-            backgroundColor: '#27272a',
-            color: '#a1a1aa',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <RefreshCw size={16} />
-          </button>
-          <button onClick={resetBoard} title="Reset to start position" style={{
-            padding: '9px',
-            borderRadius: '3px',
-            backgroundColor: '#27272a',
-            color: '#a1a1aa',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <RotateCcw size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-        {/* Eval Bar — fixed width so the row doesn't reflow when the
-            eval text width changes ("--" → "+0.36" → "M5" → "1-0"). */}
-        <div style={{ height: '520px', width: '60px', display: 'flex', justifyContent: 'center' }}>
-          <EvalBar evalCp={evalCp} mate={evalMate} result={gameResult} loading={topMovesLoading} />
-        </div>
-
-        {/* Board (with pawn-value overlay) */}
-        <div style={{
-          position: 'relative',
-          width: '520px',
-          height: '520px',
-          borderRadius: '2px',
-          overflow: 'hidden',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-          border: '1px solid #27272a'
-        }}>
-          <Chessboard
-            position={fen}
-            onPieceDrop={onDrop}
-            onSquareClick={onSquareClick}
-            onPieceDragBegin={onPieceDragBegin}
-            onPieceDragEnd={onPieceDragEnd}
-            onDragOverSquare={onDragOverSquare}
-            boardOrientation={orientation}
-            customArrows={customArrows}
-            customSquareStyles={customSquareStyles}
-            animationDuration={150}
-            arePiecesDraggable={true}
-            boardWidth={520}
-          />
-
-          {/* All numeric labels live in one transparent overlay above the
-              board. Two flavors:
-                • valueLabels       — one per piece. ABSOLUTE worth in the
-                  current position, OR the change in worth while a drag is
-                  hovering a legal destination (preview mode).
-                • destinationLabels — one per legal destination. Shows how
-                  the moved piece's worth would change if it landed there.
-
-              Both flavors share the same big-centered design: ~22px bold
-              monospace, color interpolated from white toward saturated
-              green/red as the magnitude grows, no shadow. */}
-          {heatmapVisible && (valueLabels.length > 0 || destinationLabels.length > 0 || kingSafetyLabels.length > 0) && (
-            <div style={{
-              position: 'absolute',
-              top: 0, left: 0, width: '100%', height: '100%',
-              pointerEvents: 'none', zIndex: 2,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              {valueLabels.map(v => (
-                <div key={`val-${v.square}`} style={{
-                  position: 'absolute',
-                  left: `${v.left}px`, top: `${v.top}px`,
-                  width: `${v.size}px`, height: `${v.size}px`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '22px',
-                  fontWeight: 800,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                  color: v.color,
-                  letterSpacing: '-0.04em',
-                  // Heavy black stroke + bright fill = subtitle-style
-                  // legibility on any square color or piece icon.
-                  WebkitTextStrokeWidth: '4px',
-                  WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.92)',
-                  paintOrder: 'stroke fill',
-                }}>
-                  {v.label}
-                </div>
-              ))}
-              {destinationLabels.map(v => (
-                <div key={`dest-${v.square}`} style={{
-                  position: 'absolute',
-                  left: `${v.left}px`, top: `${v.top}px`,
-                  width: `${v.size}px`, height: `${v.size}px`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '22px',
-                  fontWeight: 800,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                  color: v.color,
-                  letterSpacing: '-0.04em',
-                  // Heavy black stroke + bright fill = subtitle-style
-                  // legibility on any square color or piece icon.
-                  WebkitTextStrokeWidth: '4px',
-                  WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.92)',
-                  paintOrder: 'stroke fill',
-                }}>
-                  {v.label}
-                </div>
-              ))}
-              {kingSafetyLabels.map(v => (
-                <div key={`king-${v.square}`} style={{
-                  position: 'absolute',
-                  left: `${v.left}px`, top: `${v.top}px`,
-                  width: `${v.size}px`, height: `${v.size}px`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '32px',
-                  fontWeight: 900,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                  color: v.color,
-                  letterSpacing: '-0.04em',
-                  WebkitTextStrokeWidth: '5px',
-                  WebkitTextStrokeColor: 'rgba(0, 0, 0, 0.94)',
-                  paintOrder: 'stroke fill',
-                }}>
-                  {v.label}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Subtle "computing values" indicator while the engine works on
-              the heatmap. Sits in the top-left of the board, doesn't block
-              anything. */}
-          {heatmapVisible && heatmapLoading && !heatmapPieces && (
-            <div style={{
-              position: 'absolute',
-              top: '6px',
-              left: '8px',
-              fontSize: '10px',
-              fontWeight: 600,
-              color: 'rgba(255, 255, 255, 0.85)',
-              backgroundColor: 'rgba(0, 0, 0, 0.55)',
-              padding: '3px 8px',
-              borderRadius: '999px',
-              letterSpacing: '0.02em',
-              textTransform: 'uppercase',
-              pointerEvents: 'none',
-              zIndex: 3,
+              <Shuffle size={14} />
+            </button>
+            <button onClick={flipBoard} title="Flip board" style={{
+              padding: '7px',
+              borderRadius: '2px',
+              backgroundColor: '#27272a',
+              color: '#a1a1aa',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              Computing values…
-            </div>
-          )}
-        </div>
-
-        {/* Analysis Panel */}
-        <div style={{
-          width: '280px',
-          backgroundColor: '#18181b',
-          border: '1px solid #27272a',
-          borderRadius: '3px',
-          display: 'flex',
-          flexDirection: 'column',
-          maxHeight: '520px',
-          overflow: 'hidden'
-        }}>
-          {/* Header */}
-          <div style={{
-            padding: '12px 16px',
-            borderBottom: '1px solid #27272a',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: '#e4e4e7',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}>
-            Analysis
+              <RefreshCw size={14} />
+            </button>
+            <button onClick={resetBoard} title="Reset to start position" style={{
+              padding: '7px',
+              borderRadius: '2px',
+              backgroundColor: '#27272a',
+              color: '#a1a1aa',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <RotateCcw size={14} />
+            </button>
           </div>
 
-          {/* Last move card — shows the move that got us to the current
-              position with its quality classification + tagline. */}
+          {/* Status row: side to move | material delta | phase | shift hint */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 12px',
+            borderBottom: '1px solid #27272a',
+            flexWrap: 'wrap',
+            fontSize: '10px',
+          }}>
+            <span style={{
+              color: sideToMove === 'w' ? '#fafafa' : '#a1a1aa',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+            }}>
+              {sideToMove === 'w' ? 'White' : 'Black'} to move
+            </span>
+            {Math.abs(materialDelta) >= 0.1 && (
+              <span style={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontWeight: 700,
+                padding: '2px 6px',
+                borderRadius: '2px',
+                backgroundColor: materialDelta > 0 ? 'rgba(74, 222, 128, 0.12)' : 'rgba(248, 113, 113, 0.12)',
+                color: materialDelta > 0 ? '#86efac' : '#fca5a5',
+                letterSpacing: '-0.02em',
+              }} title={materialDelta > 0 ? 'White is up material' : 'Black is up material'}>
+                {materialDelta > 0 ? '+' : ''}{materialDelta.toFixed(1)}
+              </span>
+            )}
+            <span style={{
+              color: '#71717a',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              fontWeight: 600,
+            }}>
+              {phase}
+            </span>
+            <div style={{ flex: 1 }} />
+            <span title="Hold Shift to reveal piece values" style={{
+              color: showHeatmap ? '#f97316' : '#52525b',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              border: `1px solid ${showHeatmap ? '#f97316' : '#3f3f46'}`,
+              padding: '2px 6px',
+              borderRadius: '2px',
+              fontWeight: 600,
+            }}>
+              ⇧ Shift
+            </span>
+          </div>
+
+          {/* Opening name + mini move history with piece icons */}
+          {(openingName || moveHistory.length > 1) && (
+            <div style={{
+              padding: '8px 12px',
+              borderBottom: '1px solid #27272a',
+            }}>
+              {openingName && (
+                <div style={{
+                  fontSize: '11px',
+                  color: '#c4b5fd',
+                  fontWeight: 600,
+                  marginBottom: moveHistory.length > 1 ? '6px' : 0,
+                  letterSpacing: '-0.01em',
+                }}>
+                  {openingName}
+                </div>
+              )}
+              {moveHistory.length > 1 && (
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '3px',
+                  fontSize: '12px',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  maxHeight: '52px',
+                  overflowY: 'auto',
+                  lineHeight: 1.5,
+                }}>
+                  {moveHistory.slice(1).map((m, i) => {
+                    const isWhiteMove = i % 2 === 0;
+                    const moveNum = Math.floor(i / 2) + 1;
+                    return (
+                      <span key={i}
+                        onClick={() => {
+                          setHistoryIndex(i + 1);
+                          lastFetchedFen.current = '';
+                          setFen(m.fen);
+                          setInputFen(m.fen);
+                        }}
+                        style={{
+                          padding: '1px 5px',
+                          borderRadius: '2px',
+                          backgroundColor: historyIndex === i + 1 ? 'rgba(59, 130, 246, 0.25)' : 'transparent',
+                          color: historyIndex === i + 1 ? '#60a5fa' : (isWhiteMove ? '#e4e4e7' : '#a1a1aa'),
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {isWhiteMove && <span style={{ color: '#52525b', marginRight: '3px' }}>{moveNum}.</span>}
+                        {sanWithPieces(m.san, isWhiteMove)}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Last move card */}
           {lastMoveAnalysis && (
             <div style={{
-              padding: '12px 16px',
+              padding: '10px 12px',
               borderBottom: '1px solid #27272a',
               backgroundColor: 'rgba(15, 23, 42, 0.4)',
             }}>
@@ -1332,7 +1336,7 @@ export default function Board() {
                     letterSpacing: '0.08em',
                     textTransform: 'uppercase',
                     color: getQualityColor(lastMoveAnalysis.quality),
-                    backgroundColor: `${getQualityColor(lastMoveAnalysis.quality)}26`, // ~15% alpha
+                    backgroundColor: `${getQualityColor(lastMoveAnalysis.quality)}26`,
                     padding: '3px 7px',
                     borderRadius: '2px',
                   }}>
@@ -1377,11 +1381,11 @@ export default function Board() {
             </div>
           )}
 
-          {/* Top Moves List */}
+          {/* Top moves list (scrollable) */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
             {topMovesLoading ? (
               <div style={{ textAlign: 'center', padding: '20px', color: '#71717a', fontSize: '12px' }}>
-                Analyzing...
+                Analyzing…
               </div>
             ) : topMoves.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '20px', color: '#71717a', fontSize: '12px' }}>
@@ -1393,18 +1397,18 @@ export default function Board() {
                   key={`${move.rank}-${idx}`}
                   onClick={() => handleMoveClick(move, idx)}
                   style={{
-                    padding: '10px 12px',
-                    marginBottom: '4px',
+                    padding: '8px 10px',
+                    marginBottom: '3px',
                     borderRadius: '2px',
                     backgroundColor: selectedMoveIndex === idx ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
                     cursor: 'pointer',
                     border: selectedMoveIndex === idx ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{
-                      width: '20px',
-                      height: '20px',
+                      width: '18px',
+                      height: '18px',
                       borderRadius: '2px',
                       backgroundColor: idx === 0 ? 'rgba(74, 222, 128, 0.2)' : '#27272a',
                       color: idx === 0 ? '#4ade80' : '#71717a',
@@ -1418,7 +1422,7 @@ export default function Board() {
                     </span>
                     <span style={{
                       flex: 1,
-                      fontSize: '15px',
+                      fontSize: '14px',
                       fontWeight: 600,
                       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                       color: idx === 0 ? '#4ade80' : '#e4e4e7'
@@ -1429,7 +1433,7 @@ export default function Board() {
                       fontSize: '11px',
                       fontWeight: 600,
                       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                      padding: '3px 7px',
+                      padding: '2px 6px',
                       borderRadius: '2px',
                       backgroundColor: move.eval_pawns > 0 ? 'rgba(74, 222, 128, 0.15)' : move.eval_pawns < 0 ? 'rgba(248, 113, 113, 0.15)' : 'rgba(161, 161, 170, 0.15)',
                       color: move.eval_pawns > 0 ? '#4ade80' : move.eval_pawns < 0 ? '#f87171' : '#a1a1aa'
@@ -1438,14 +1442,10 @@ export default function Board() {
                     </span>
                   </div>
 
-                  {/* Move tagline (engine-free, generated by quickExplain).
-                      A one-liner like "Develops the knight, threatens the
-                      bishop" so you can scan the move list and read what
-                      each move accomplishes positionally. */}
                   {move.tagline && (
                     <div style={{
-                      marginTop: '4px',
-                      marginLeft: '30px',
+                      marginTop: '3px',
+                      marginLeft: '26px',
                       fontSize: '11px',
                       color: '#a1a1aa',
                       lineHeight: 1.35,
@@ -1454,13 +1454,10 @@ export default function Board() {
                     </div>
                   )}
 
-                  {/* PV taglines: the next couple of plies of the engine's
-                      preferred line, each annotated. Only show when this
-                      move is selected to avoid panel clutter. */}
                   {selectedMoveIndex === idx && Array.isArray(move.pvLine) && move.pvLine.length > 1 && (
                     <div style={{
                       marginTop: '6px',
-                      marginLeft: '30px',
+                      marginLeft: '26px',
                       paddingLeft: '8px',
                       borderLeft: '2px solid #3f3f46',
                       display: 'flex',
@@ -1483,67 +1480,45 @@ export default function Board() {
                     </div>
                   )}
 
-                  {/* Inline explanation when selected */}
                   {selectedMoveIndex === idx && (
-                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #27272a' }}>
+                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #27272a' }}>
                       {explanationLoading ? (
-                        <div style={{ fontSize: '12px', color: '#71717a' }}>Loading...</div>
+                        <div style={{ fontSize: '11px', color: '#71717a' }}>Loading…</div>
                       ) : explanation ? (
                         <>
                           <div style={{
-                            fontSize: '11px',
+                            fontSize: '10px',
                             fontWeight: 600,
                             color: getQualityColor(explanation.quality),
                             textTransform: 'uppercase',
-                            marginBottom: '6px'
+                            marginBottom: '4px',
+                            letterSpacing: '0.05em',
                           }}>
-                            {explanation.quality}
+                            {getQualityLabel(explanation.quality)}
                           </div>
-                          <div style={{ fontSize: '13px', color: '#d4d4d8', marginBottom: '6px' }}>
+                          <div style={{ fontSize: '12px', color: '#d4d4d8', marginBottom: '4px' }}>
                             {explanation.summary}
                           </div>
-                          <div style={{ fontSize: '12px', color: '#a1a1aa' }}>
+                          <div style={{ fontSize: '11px', color: '#a1a1aa', lineHeight: 1.4 }}>
                             {explanation.details}
                           </div>
                           {explanation.bestMoveSan && !explanation.isBestMove && (
                             <div style={{
-                              marginTop: '8px',
+                              marginTop: '6px',
                               fontSize: '11px',
                               color: '#a1a1aa',
-                              fontFamily: 'monospace'
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                             }}>
                               Best was{' '}
                               <span style={{
-                                color: '#4ade80',
+                                color: '#86efac',
                                 fontWeight: 600,
-                                padding: '2px 6px',
-                                borderRadius: '3px',
-                                backgroundColor: 'rgba(74, 222, 128, 0.12)',
+                                padding: '1px 5px',
+                                borderRadius: '2px',
+                                backgroundColor: 'rgba(134, 239, 172, 0.12)',
                               }}>
                                 {explanation.bestMoveSan}
                               </span>
-                              {typeof explanation.winRateLoss === 'number' && explanation.winRateLoss >= 1 && (
-                                <span style={{ color: '#71717a', marginLeft: '6px' }}>
-                                  ({explanation.winRateLoss.toFixed(1)}% win-rate lost)
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          {explanation.factors?.length > 0 && (
-                            <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                              {explanation.factors.map((f, i) => (
-                                <span key={i} style={{
-                                  fontSize: '9px',
-                                  fontWeight: 600,
-                                  textTransform: 'uppercase',
-                                  padding: '3px 6px',
-                                  borderRadius: '3px',
-                                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                                  color: '#60a5fa'
-                                }}>
-                                  {f.type.replace('_', ' ')}
-                                </span>
-                              ))}
                             </div>
                           )}
                         </>
@@ -1556,45 +1531,6 @@ export default function Board() {
           </div>
         </div>
       </div>
-
-      {/* Move history display */}
-      {moveHistory.length > 1 && (
-        <div style={{
-          width: '100%',
-          maxWidth: '820px',
-          backgroundColor: 'rgba(24, 24, 27, 0.5)',
-          padding: '10px 16px',
-          borderRadius: '3px',
-          border: '1px solid #27272a',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '4px',
-          fontSize: '13px',
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace'
-        }}>
-          {moveHistory.slice(1).map((m, i) => (
-            <span
-              key={i}
-              onClick={() => {
-                setHistoryIndex(i + 1);
-                lastFetchedFen.current = '';
-                setFen(m.fen);
-                setInputFen(m.fen);
-              }}
-              style={{
-                padding: '4px 8px',
-                borderRadius: '4px',
-                backgroundColor: historyIndex === i + 1 ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                color: historyIndex === i + 1 ? '#60a5fa' : '#a1a1aa',
-                cursor: 'pointer'
-              }}
-            >
-              {i % 2 === 0 && <span style={{ color: '#52525b', marginRight: '4px' }}>{Math.floor(i / 2) + 1}.</span>}
-              {m.san}
-            </span>
-          ))}
-        </div>
-      )}
 
       {/* FEN Input */}
       <div style={{

@@ -385,22 +385,67 @@ function isKnightOnRim(chess, square, piece, moveNumber) {
 }
 
 // ── Luft (back-rank king + adjacent pawn pushes one) ───────────────────────
+// Real luft is created in response to a back-rank threat. This detector
+// only fires when ALL of:
+//   • king is on its first rank
+//   • the pawn is directly adjacent to the king (within 1 file)
+//   • the pawn is on its starting rank (single push from rank 2 / rank 7)
+//   • there's an actual back-rank threat: an enemy rook or queen on a
+//     file with no friendly pawn blocking it from the king's rank
+// Without that last condition, h3 / f3 fires constantly for any quiet
+// king-side pawn move, which is the bug the user flagged.
 function isLuft(chessBefore, chessAfter, fromSquare, toSquare, movingPiece, moverColor) {
   if (movingPiece.type !== 'p') return false;
   const kingSq = findKing(chessAfter, moverColor);
   if (!kingSq) return false;
-  const kingRank = parseInt(kingSq[1], 10) - 1;
+  const [kf, kr] = squareToFR(kingSq);
   const expectedKingRank = moverColor === 'w' ? 0 : 7;
-  if (kingRank !== expectedKingRank) return false;
-  const [kf] = squareToFR(kingSq);
-  const [pf] = squareToFR(fromSquare);
-  // Pawn must be near the king (within 2 files).
-  if (Math.abs(kf - pf) > 2) return false;
-  // Single-square push.
-  const [, fr] = squareToFR(fromSquare);
+  if (kr !== expectedKingRank) return false;
+  const [pf, fr] = squareToFR(fromSquare);
+  if (Math.abs(kf - pf) > 1) return false; // adjacent only
   const [, tr] = squareToFR(toSquare);
-  if (Math.abs(tr - fr) !== 1) return false;
-  return true;
+  if (Math.abs(tr - fr) !== 1) return false; // single push
+  const expectedPawnRank = moverColor === 'w' ? 1 : 6;
+  if (fr !== expectedPawnRank) return false;
+
+  // Back-rank threat check: any enemy R/Q on a file with no friendly pawn
+  // blocking. We check chessBefore (the position the move is responding to).
+  const enemy = moverColor === 'w' ? 'b' : 'w';
+  for (let f = 0; f < 8; f++) {
+    let hasEnemyHeavy = false;
+    let myPawnOnFile = false;
+    for (let r = 0; r < 8; r++) {
+      const p = chessBefore.get(frToSquare(f, r));
+      if (!p) continue;
+      if (p.color === enemy && (p.type === 'r' || p.type === 'q')) hasEnemyHeavy = true;
+      if (p.color === moverColor && p.type === 'p') myPawnOnFile = true;
+    }
+    if (hasEnemyHeavy && !myPawnOnFile) return true;
+  }
+  return false;
+}
+
+// ── Pawn-structure flags (computed once per call from pawnsByFile counts) ─
+function isIQP(pawnsByFileArr) {
+  // d-file pawn with no friendly pawns on c or e files.
+  return pawnsByFileArr[3] >= 1 && pawnsByFileArr[2] === 0 && pawnsByFileArr[4] === 0;
+}
+function detectHangingPawnsPair(pawnsByFileArr) {
+  // Two adjacent pawns with no friendly pawns on flanking files.
+  // "c+d hanging" = pawns on c & d, none on b or e.
+  if (pawnsByFileArr[2] >= 1 && pawnsByFileArr[3] >= 1
+      && pawnsByFileArr[1] === 0 && pawnsByFileArr[4] === 0) return 'cd';
+  if (pawnsByFileArr[3] >= 1 && pawnsByFileArr[4] >= 1
+      && pawnsByFileArr[2] === 0 && pawnsByFileArr[5] === 0) return 'de';
+  return null;
+}
+
+// ── Long diagonal posting (bishop or queen on a1-h8 or h1-a8) ─────────────
+function isLongDiagonal(square) {
+  const [f, r] = squareToFR(square);
+  if (f === r) return 'a1-h8';            // long light diagonal
+  if (f === 7 - r) return 'h1-a8';        // long dark diagonal
+  return null;
 }
 
 // ── Pawn storm (multiple advanced pawns toward enemy king's wing) ───────────
@@ -837,9 +882,38 @@ export function quickExplain(fenBefore, moveUCI) {
   }
 
   // Pawn structure side-effects (whoever moved).
+  const myPawnsBefore = pawnsByFile(M.chessBefore, M.moverColor);
   const myPawnsAfter = pawnsByFile(M.chessAfter, M.moverColor);
   const oppPawnsAfter = pawnsByFile(M.chessAfter, M.opponentColor);
   const oppPawnsBefore = pawnsByFile(M.chessBefore, M.opponentColor);
+
+  // IQP — created for either side?
+  if (!isIQP(myPawnsBefore) && isIQP(myPawnsAfter)) {
+    add('iqp_self', 'Accepts an isolated queen pawn (IQP)');
+  } else if (!isIQP(oppPawnsBefore) && isIQP(oppPawnsAfter)) {
+    add('iqp_them', 'Saddles the opponent with an isolated queen pawn');
+  }
+  // Hanging pawns — created for either side?
+  const hpSelfBefore = detectHangingPawnsPair(myPawnsBefore);
+  const hpSelfAfter = detectHangingPawnsPair(myPawnsAfter);
+  if (!hpSelfBefore && hpSelfAfter) {
+    add('hanging_pawns_self', `Creates hanging ${hpSelfAfter} pawns`);
+  }
+  const hpThemBefore = detectHangingPawnsPair(oppPawnsBefore);
+  const hpThemAfter = detectHangingPawnsPair(oppPawnsAfter);
+  if (!hpThemBefore && hpThemAfter) {
+    add('hanging_pawns_them', `Saddles the opponent with hanging ${hpThemAfter} pawns`);
+  }
+
+  // Long-diagonal posting (B/Q only). Only fires if the piece wasn't on
+  // the same long diagonal before — i.e. arriving at it for the first time.
+  if (['b', 'q'].includes(M.movingPiece.type)) {
+    const fromDiag = isLongDiagonal(M.from);
+    const toDiag = isLongDiagonal(M.to);
+    if (toDiag && fromDiag !== toDiag) {
+      add('long_diagonal', `Posts on the long ${toDiag} diagonal`);
+    }
+  }
 
   if (M.capturedBefore && M.capturedBefore.type === 'p' && M.movingPiece.type !== 'p') {
     const [tf] = squareToFR(M.to);
@@ -927,19 +1001,33 @@ export function quickExplain(fenBefore, moveUCI) {
 
   // ── Tagline composition ─────────────────────────────────────────────────
   const PRIORITY = [
+    // Game-defining
     'checkmate', 'sacrifice', 'fork', 'discovered_check', 'pin', 'skewer',
+    // Captures / trades
     'queen_trade', 'exchange_sacrifice', 'piece_trade', 'capture',
+    // Threats
     'creates_threat', 'threatens', 'traps_piece', 'check',
+    // King moves / promotions
     'castles_kingside', 'castles_queenside', 'promotion', 'en_passant',
+    // Big strategic / structural ideas (2000-level)
+    'iqp_them', 'iqp_self', 'hanging_pawns_them', 'hanging_pawns_self',
+    'doubled_pawns_them', 'backward_pawn_them',
+    // Rook play
     'doubles_rooks', 'rook_seventh', 'open_file', 'semi_open_file',
-    'outpost', 'fianchetto', 'battery', 'attacks_king', 'luft',
-    'attacks_pawn', 'eyes_king_zone',
+    // Piece-specific posting
+    'outpost', 'long_diagonal', 'fianchetto', 'battery',
+    'attacks_pawn', 'eyes_king_zone', 'attacks_king', 'luft',
     'prepares_castling_kingside', 'prepares_castling_queenside',
-    'develops', 'centralizes', 'defends', 'restricts',
+    'centralizes', 'defends', 'restricts',
+    // Pawn play
     'pawn_break', 'pawn_lever', 'passed_pawn', 'pawn_storm',
-    'doubled_pawns_them', 'backward_pawn_them', 'isolated_pawn',
+    'isolated_pawn',
+    // Bad signs (still informative)
     'knight_on_rim', 'bishop_pair_lost', 'bad_bishop', 'hangs',
+    // Game-end states
     'stalemate', 'threefold_repetition', 'fifty_move', 'insufficient_material',
+    // Internal flags (kept low — only used by combined phrasing)
+    'develops',
   ];
   const motifPhrases = motifs.map((m, i) => ({ motif: m, phrase: phrases[i] }))
     .filter(x => x.phrase);
