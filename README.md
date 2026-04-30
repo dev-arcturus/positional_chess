@@ -310,7 +310,130 @@ Heatmap is **also** automatically on while a piece is being dragged, so
 the Shift-and-drag combo doesn't fight with the browser's drag handlers
 — you can just grab a piece and the live preview kicks in.
 
-## Motif catalog (taglines)
+## Motif catalog (~50 detectors)
+
+`client/src/engine/taglines.js` runs every top move (and the first 3 plies
+of its PV) through `quickExplain` — pure chess.js + geometry, no engine
+calls. The catalog below describes what each detector actually checks.
+Detectors are conservative: they prefer to miss a motif than to fire a
+wrong one.
+
+### Tactical
+- `checkmate` / `stalemate` — chess.js terminal-state methods.
+- `fork` — moved piece attacks ≥ 2 enemy pieces, at least one is the
+  king or worth more than the moving piece.
+- `pin` — sliding piece's outward ray contains an enemy piece, then a
+  more valuable enemy piece behind it.
+- `skewer` — same ray, but the first enemy is more valuable than the
+  second (forces the bigger piece to move and lose the smaller).
+- `discovered_check` — opponent is in check and the checker is **not**
+  the moved piece.
+- `sacrifice` — moving piece is left hanging (cheapest attacker < piece
+  value) for net material loss ≥ 200 cp.
+- `threatens` — moved piece attacks a single enemy piece worth more
+  than itself.
+- `creates_threat` — an opponent piece that wasn't hanging before is
+  now hanging.
+- `defends` — a friendly piece that was hanging before is no longer
+  hanging.
+- `traps_piece` — among the enemy pieces our moved piece attacks, at
+  least one has zero safe moves (every legal move lands on a hanging
+  square). Validated by actually applying each candidate move and
+  checking the resulting hanging state.
+- `hangs` — the moving piece itself is left hanging (and didn't recoup
+  enough material to count as a sacrifice).
+
+### Captures and trades
+- `queen_trade` — queen captures queen.
+- `piece_trade` — captured piece is the same type as the mover.
+- `exchange_sacrifice` — rook captures minor piece (or vice versa via
+  the SEE-style sacrifice path).
+- `capture` — generic, when none of the more-specific trade motifs fire.
+- `en_passant`, `promotion` — flag-driven.
+
+### King area
+- `castles_kingside` / `castles_queenside`.
+- `connects_rooks` — after castling, both rooks share the back rank
+  with no pieces between them.
+- `attacks_king` — moved piece is now closer to the enemy king than
+  before, and within 3 squares (only fires when no stronger tactical
+  motif applies).
+- `luft` — back-rank king + a pawn within two files of it advances by
+  one square. Standard "make a hole for the king" idea.
+- `pawn_storm` — a pawn move on the same wing as the enemy king,
+  advanced past its starting rank, with at least one **other** friendly
+  pawn already advanced on the same wing.
+
+### Pieces
+- `develops` — knight or bishop moves off the back rank in the opening
+  (move number ≤ 12).
+- `centralizes` — actual gain in central-square attack count of ≥ 1.5
+  (core central squares d4/d5/e4/e5 count double). Doesn't fire just
+  because a piece lands on d4 — only when the move *increases* central
+  control.
+- `outpost` — knight/bishop moves to a square no enemy pawn can ever
+  attack, **and** that's either pawn-supported or on rank 5+ (white) /
+  rank 4– (black).
+- `fianchetto` — bishop to b2/g2 (white) or b7/g7 (black).
+- `knight_on_rim` — knight ends on the a- or h-file in the opening
+  (move number ≤ 16). Anti-pattern.
+- `bad_bishop` — bishop ends on a position where ≥ 5 friendly pawns
+  share its color complex (it's hemmed in by its own pawns).
+- `bishop_pair_lost` — moving bishop is captured/traded such that we go
+  from 2 bishops to 1, while opponent had 2.
+
+### Rooks and files
+- `doubles_rooks` — two same-color rooks on the same file after the
+  move.
+- `open_file` / `semi_open_file` — rook to a file with no friendly
+  pawns; "semi-open" if there are enemy pawns on it, "open" if neither.
+- `rook_seventh` — rook on its 7th rank (rank 7 for white, rank 2 for
+  black).
+- `battery` — sliding piece moves so it shares a ray with another
+  same-color slider AND that ray terminates at an enemy king, queen, or
+  rook. Doesn't fire on aimless line-up.
+
+### Pawn structure
+- `pawn_break` — pawn captures another piece.
+- `pawn_lever` — single-step pawn push that lands diagonally adjacent
+  to an enemy pawn (next move can capture).
+- `passed_pawn` — pawn ends on a square with no enemy pawn ahead in
+  the same or adjacent files.
+- `doubled_pawns_them` — capturing creates a doubled pawn for the
+  opponent on the captured file.
+- `isolated_pawn` — pawn ends on a file where no friendly pawn occupies
+  either adjacent file.
+- `backward_pawn_them` — an enemy pawn that wasn't backward before
+  becomes backward after the move (no friendly pawn behind on adjacent
+  files, and the front square is blocked or covered by an enemy pawn).
+
+### Strategic / contextual
+- `restricts` — opponent's pseudo-legal-move count drops by ≥ 4 after
+  the move.
+- `tempo` — composite: develops + (threatens / attacks_king / creates_threat).
+
+### Fallback (when nothing tactical fires)
+The fallback ladder is **never "Quiet X move"**. It picks the most
+specific thing that can be said:
+
+1. Activity (mobility delta) — "Activates the knight (now eyes 8 squares)"
+2. Mobility loss — "Repositions the knight" / "Pulls the rook back into a passive role"
+3. Pawn-specific — "Pushes the pawn to the seventh rank" / "Pushes the d-pawn to d4"
+4. Direction toward enemy king — "Brings the rook toward the kingside"
+5. Direction toward center — "Repositions the knight toward the center"
+6. Heavy pieces — "Repositions the rook to e3"
+7. Last resort — "Maneuvers the bishop to f4" (still names the destination)
+
+### Combined phrasing
+Some motif pairs read more naturally combined:
+
+- `castles_kingside` + `connects_rooks` → "Castles kingside, connecting the rooks"
+- `capture` + `discovered_check` → "Captures the X with discovered check"
+- `capture` + `check` → "Captures the X with check"
+- `develops` + `threatens` → "Develops the knight with tempo (threatens the bishop)"
+- `develops` + `outpost` → "Develops the knight, establishes an outpost on f5"
+
+## Original motif catalog (taglines)
 
 `client/src/engine/taglines.js` runs every top move through `quickExplain`
 — pure chess.js + geometry, no engine calls. Each move gets a short
@@ -367,18 +490,22 @@ destination square gets a **green inset ring** (the same trick used for
 hanging pieces but in green, not red). This gives an instant "is this
 the move?" answer without having to read the analysis panel.
 
-## King safety badges
+## King safety (0–9 overlay on each king)
 
-Pure-FEN heuristic, no engine calls. For each king:
+Pure-FEN heuristic, no engine calls:
 
 ```
-safety = (friendly pawns within 2 squares of king)
-       − (enemy non-pawn, non-king pieces within 3 squares)
-       − (king is in central files & ranks ? 2 : 0)
+raw = (friendly pawns within 2 squares of king)
+    − (enemy non-pawn, non-king pieces within 3 squares)
+    − (king is in central files & ranks ? 2 : 0)
+
+score = clamp(raw + 4, 0, 9)
 ```
 
-Displayed as a `♔ +N` / `♚ −N` badge near the eval — green for safe,
-red for exposed.
+Rendered as a single digit on each king's square (32 px, heavy black
+stroke + bright fill). 0 = wide-open king, 9 = locked-down safe.
+Color is interpolated from saturated red at 0 through white at 4–5
+through saturated green at 9.
 
 ## Material balance + phase
 

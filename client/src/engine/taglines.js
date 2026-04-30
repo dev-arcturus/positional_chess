@@ -1,106 +1,89 @@
-// Local, engine-free move classification used to generate one-line taglines
-// for the top-moves panel ("Captures pawn, forks queen and rook", "Develops
-// the knight onto an outpost", etc.).
+// Comprehensive positional motif detection for the move list.
 //
-// Designed to be cheap enough to run on every top move plus the first few
-// plies of each PV — pure chess.js + simple geometry, no Stockfish calls.
+// Every detector here is engine-free: pure chess.js + small geometric
+// computations. Aim is correctness ("don't say things that aren't true")
+// over coverage ("describe every nuance"). Each detector is conservative —
+// it would rather miss a motif than fire a wrong one.
 //
-// Motif catalog (broad strokes — see body for details):
-//   Tactical:    capture, check, checkmate, fork, pin, skewer,
-//                discovered_check, removal_of_defender, sacrifice,
-//                hangs, threatens, defends, deflection, blocks_check
-//   Endings:     stalemate, threefold_repetition, fifty_move,
-//                insufficient_material
-//   Pawn play:   pawn_break, pawn_lever, passed_pawn, doubled_pawns,
-//                isolated_pawn, pawn_storm, en_passant, promotion
-//   Pieces:      develops, centralizes, outpost, fianchetto,
-//                trapped_piece, retreats, activity_gain
-//   Rooks:       open_file, semi_open_file, doubles_rooks,
-//                rook_seventh, back_rank
-//   King:        castles_kingside, castles_queenside, connects_rooks,
-//                attacks_king, exposes_king, weakens_king
-//   Trades:      queen_trade, piece_trade, exchange_sacrifice
-//   Strategic:   space_gain, opens_diagonal, opens_file,
-//                tempo, gives_tempo
+// Architecture: build one Context per move (chessBefore + chessAfter +
+// pre-computed maps), then run all detectors against it. Each detector
+// only does the work that actually applies (e.g. pawn-structure
+// detectors short-circuit if no pawn moved AND no pawn was captured).
+//
+// Output:
+//   quickExplain(fen, moveUCI) → { san, motifs[], tagline, fenAfter }
+//   explainPV(startFen, pvUcis, plies) → [{ san, tagline }, …]
+//
+// Motif catalog (~50). See PRIORITY array near the bottom for ranking.
 
 import { Chess } from 'chess.js';
 
 const PIECE_VALUE = { p: 100, n: 300, b: 320, r: 500, q: 900, k: 20_000 };
 const PIECE_NAME  = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
+// ── Geometry ────────────────────────────────────────────────────────────────
 function frToSquare(f, r) { return String.fromCharCode(97 + f) + (r + 1); }
-function squareToFR(sq) { return [sq.charCodeAt(0) - 97, parseInt(sq[1], 10) - 1]; }
-function fileLetter(idx) { return String.fromCharCode(97 + idx); }
+function squareToFR(sq)   { return [sq.charCodeAt(0) - 97, parseInt(sq[1], 10) - 1]; }
+function fileLetter(idx)  { return String.fromCharCode(97 + idx); }
 function chebyshev(sq1, sq2) {
   const [f1, r1] = squareToFR(sq1);
   const [f2, r2] = squareToFR(sq2);
   return Math.max(Math.abs(f1 - f2), Math.abs(r1 - r2));
 }
+function squareIsLight(sq) {
+  const [f, r] = squareToFR(sq);
+  return (f + r) % 2 === 1;
+}
+
+// ── Board scans ─────────────────────────────────────────────────────────────
 function findKing(chess, color) {
-  const board = chess.board();
-  for (let r = 0; r < 8; r++) {
-    for (let f = 0; f < 8; f++) {
-      const p = board[r][f];
-      if (p && p.type === 'k' && p.color === color) return frToSquare(f, 7 - r);
-    }
-  }
-  return null;
-}
-function squaresAttackedFrom(chess, fromSquare) {
-  const piece = chess.get(fromSquare);
-  if (!piece) return [];
-  const attacked = [];
-  for (let r = 0; r < 8; r++) {
-    for (let f = 0; f < 8; f++) {
-      const sq = frToSquare(f, r);
-      if (sq === fromSquare) continue;
-      const a = chess.attackers(sq, piece.color);
-      if (a && a.includes(fromSquare)) attacked.push(sq);
-    }
-  }
-  return attacked;
-}
-function isHangingApprox(chess, square) {
-  const piece = chess.get(square);
-  if (!piece || piece.type === 'k') return false;
-  const opponent = piece.color === 'w' ? 'b' : 'w';
-  const attackers = chess.attackers(square, opponent);
-  if (!attackers || attackers.length === 0) return false;
-  const defenders = chess.attackers(square, piece.color);
-  if (!defenders || defenders.length === 0) return true;
-  const minA = Math.min(...attackers.map(s => PIECE_VALUE[chess.get(s).type] || 100));
-  return minA < PIECE_VALUE[piece.type];
-}
-function isOutpost(chess, square, piece) {
-  if (!['n', 'b'].includes(piece.type)) return false;
-  const [file, rank] = squareToFR(square);
-  if (piece.color === 'w' && rank < 4) return false;     // ranks 5..8
-  if (piece.color === 'b' && rank > 3) return false;     // ranks 1..4
-  const enemy = piece.color === 'w' ? 'b' : 'w';
-  for (const df of [-1, 1]) {
-    const f = file + df;
-    if (f < 0 || f > 7) continue;
-    for (let r = 0; r < 8; r++) {
-      const p = chess.get(frToSquare(f, r));
-      if (!p || p.type !== 'p' || p.color !== enemy) continue;
-      // White piece outpost: a black pawn at higher rank can advance to attack.
-      if (piece.color === 'w' && r >= rank + 1) return false;
-      // Black piece outpost: a white pawn at lower rank can advance to attack.
-      if (piece.color === 'b' && r <= rank - 1) return false;
-    }
-  }
-  return true;
-}
-function pieceCount(chess, type, color) {
-  let n = 0;
   const board = chess.board();
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
     const p = board[r][f];
-    if (p && p.type === type && p.color === color) n++;
+    if (p && p.type === 'k' && p.color === color) return frToSquare(f, 7 - r);
   }
-  return n;
+  return null;
 }
-// Pawn structure helpers
+function findPieces(chess, color, type) {
+  const out = [];
+  const board = chess.board();
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (p && p.color === color && (type ? p.type === type : true)) {
+      out.push({ square: frToSquare(f, 7 - r), type: p.type });
+    }
+  }
+  return out;
+}
+
+// Squares attacked by the piece on `fromSquare` (for any side).
+function squaresAttackedFrom(chess, fromSquare) {
+  const piece = chess.get(fromSquare);
+  if (!piece) return [];
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const sq = frToSquare(f, r);
+    if (sq === fromSquare) continue;
+    const a = chess.attackers(sq, piece.color);
+    if (a && a.includes(fromSquare)) out.push(sq);
+  }
+  return out;
+}
+
+// Cheap "is square X hanging?" — attacker cheaper than piece, or no defenders.
+function isHangingApprox(chess, square) {
+  const piece = chess.get(square);
+  if (!piece || piece.type === 'k') return false;
+  const opp = piece.color === 'w' ? 'b' : 'w';
+  const a = chess.attackers(square, opp);
+  if (!a || a.length === 0) return false;
+  const d = chess.attackers(square, piece.color);
+  if (!d || d.length === 0) return true;
+  const minA = Math.min(...a.map(s => PIECE_VALUE[chess.get(s).type] || 100));
+  return minA < PIECE_VALUE[piece.type];
+}
+
+// ── Pawn structure ──────────────────────────────────────────────────────────
 function pawnsByFile(chess, color) {
   const counts = new Array(8).fill(0);
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
@@ -110,7 +93,7 @@ function pawnsByFile(chess, color) {
   return counts;
 }
 function isIsolated(file, pawnsByFileArr) {
-  const left = file > 0 ? pawnsByFileArr[file - 1] : 0;
+  const left  = file > 0 ? pawnsByFileArr[file - 1] : 0;
   const right = file < 7 ? pawnsByFileArr[file + 1] : 0;
   return left === 0 && right === 0;
 }
@@ -123,74 +106,90 @@ function isPassed(chess, square, color) {
     for (let r = 0; r < 8; r++) {
       const p = chess.get(frToSquare(f, r));
       if (!p || p.type !== 'p' || p.color !== enemy) continue;
-      // White pawn is passed if no black pawn ahead of it in same/adjacent file.
       if (color === 'w' && r > rank) return false;
       if (color === 'b' && r < rank) return false;
     }
   }
   return true;
 }
-// Rook on 7th-from-its-side: rank 6 (white rook) or rank 1 (black rook).
-function isRookOnSeventh(square, color) {
-  const rank = parseInt(square[1], 10) - 1;
-  return (color === 'w' && rank === 6) || (color === 'b' && rank === 1);
-}
-function detectBattery(chessAfter, fromSquare, movingPiece) {
-  // Two same-color sliders on the same line aimed at a target.
-  if (!['b', 'r', 'q'].includes(movingPiece.type)) return null;
-  const directions = movingPiece.type === 'r'
-    ? [[1, 0], [-1, 0], [0, 1], [0, -1]]
-    : movingPiece.type === 'b'
-    ? [[1, 1], [-1, 1], [1, -1], [-1, -1]]
-    : [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  const [f0, r0] = squareToFR(fromSquare);
-  for (const [df, dr] of directions) {
-    let f = f0 + df, r = r0 + dr;
-    let firstFriend = null;
-    let firstEnemy = null;
-    while (f >= 0 && f < 8 && r >= 0 && r < 8) {
-      const sq = frToSquare(f, r);
-      const p = chessAfter.get(sq);
-      if (p) {
-        if (p.color === movingPiece.color && !firstFriend && !firstEnemy
-            && (p.type === 'r' || p.type === 'q' || p.type === 'b')) {
-          // For battery to be aimed forward (ahead of mover), we should have
-          // hit our friendly piece first when scanning OUTWARD. But this scan
-          // is outward; first friend means battery is BEHIND from mover's POV.
-          // Sufficient signal that two pieces share a line.
-          firstFriend = { sq, type: p.type };
-        }
-        if (p.color !== movingPiece.color && !firstEnemy) {
-          firstEnemy = { sq, type: p.type };
-        }
-        break;
-      }
-      f += df; r += dr;
-    }
-    if (firstFriend) {
-      return { partner: firstFriend, target: firstEnemy };
+function isBackwardPawn(chess, square, color) {
+  // Pawn that can't be defended by a friendly pawn (no friendly pawn behind on
+  // adjacent files) AND is blocked from advancing by an enemy pawn or piece on
+  // the next square.
+  const piece = chess.get(square);
+  if (!piece || piece.type !== 'p' || piece.color !== color) return false;
+  const [file, rank] = squareToFR(square);
+  const forward = color === 'w' ? 1 : -1;
+  // Friendly pawn behind on adjacent files?
+  for (const df of [-1, 1]) {
+    const f = file + df;
+    if (f < 0 || f > 7) continue;
+    for (let r = 0; r < 8; r++) {
+      const p = chess.get(frToSquare(f, r));
+      if (!p || p.type !== 'p' || p.color !== color) continue;
+      // White: behind = lower rank. Black: behind = higher rank.
+      if (color === 'w' && r <= rank) return false;
+      if (color === 'b' && r >= rank) return false;
     }
   }
-  return null;
+  // Front square blocked or under attack by enemy pawn that we can't dispute?
+  const frontR = rank + forward;
+  if (frontR < 0 || frontR > 7) return false;
+  const front = chess.get(frToSquare(file, frontR));
+  if (front && front.color !== color) return true;
+  // Enemy pawn covers our front square?
+  const enemy = color === 'w' ? 'b' : 'w';
+  for (const df of [-1, 1]) {
+    const f = file + df;
+    if (f < 0 || f > 7) continue;
+    const r2 = rank + 2 * forward;
+    if (r2 < 0 || r2 > 7) continue;
+    const p = chess.get(frToSquare(f, r2));
+    if (p && p.type === 'p' && p.color === enemy) return true;
+  }
+  return false;
+}
+function isOutpost(chess, square, piece) {
+  if (!['n', 'b'].includes(piece.type)) return false;
+  const [file, rank] = squareToFR(square);
+  if (piece.color === 'w' && rank < 4) return false;
+  if (piece.color === 'b' && rank > 3) return false;
+  const enemy = piece.color === 'w' ? 'b' : 'w';
+  for (const df of [-1, 1]) {
+    const f = file + df;
+    if (f < 0 || f > 7) continue;
+    for (let r = 0; r < 8; r++) {
+      const p = chess.get(frToSquare(f, r));
+      if (!p || p.type !== 'p' || p.color !== enemy) continue;
+      if (piece.color === 'w' && r >= rank + 1) return false;
+      if (piece.color === 'b' && r <= rank - 1) return false;
+    }
+  }
+  // Outpost is meaningful only if the piece is defended by a friendly pawn
+  // OR the piece is on rank 5/6 (4 in 0-index for white) — high-impact even
+  // without a pawn supporter.
+  const supportRank = rank + (piece.color === 'w' ? -1 : 1);
+  for (const df of [-1, 1]) {
+    const f = file + df;
+    if (f < 0 || f > 7) continue;
+    if (supportRank < 0 || supportRank > 7) continue;
+    const p = chess.get(frToSquare(f, supportRank));
+    if (p && p.type === 'p' && p.color === piece.color) return true;
+  }
+  // Without pawn support: only count rank 5+ for white, rank 4- for black.
+  return (piece.color === 'w' ? rank >= 4 : rank <= 3);
 }
 
-// Light SEE-style sacrifice check.
-function detectSacrificeApprox(chessAfter, toSquare, movingPiece, capturedPiece) {
-  if (!isHangingApprox(chessAfter, toSquare)) return false;
-  const moverVal = PIECE_VALUE[movingPiece.type] || 100;
-  const recovered = capturedPiece ? (PIECE_VALUE[capturedPiece.type] || 0) : 0;
-  return (moverVal - recovered) >= 200;
-}
-
-function detectPin(chessAfter, toSquare, movingPiece) {
+// ── Tactical helpers ────────────────────────────────────────────────────────
+function detectPin(chessAfter, fromSq, movingPiece) {
   if (!['b', 'r', 'q'].includes(movingPiece.type)) return null;
   const opponent = movingPiece.color === 'w' ? 'b' : 'w';
   const dirs = movingPiece.type === 'r'
-    ? [[1, 0], [-1, 0], [0, 1], [0, -1]]
+    ? [[1,0],[-1,0],[0,1],[0,-1]]
     : movingPiece.type === 'b'
-    ? [[1, 1], [-1, 1], [1, -1], [-1, -1]]
-    : [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  const [f0, r0] = squareToFR(toSquare);
+    ? [[1,1],[-1,1],[1,-1],[-1,-1]]
+    : [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+  const [f0, r0] = squareToFR(fromSq);
   for (const [df, dr] of dirs) {
     let first = null, second = null;
     for (let i = 1; i < 8; i++) {
@@ -212,15 +211,15 @@ function detectPin(chessAfter, toSquare, movingPiece) {
   }
   return null;
 }
-function detectSkewer(chessAfter, toSquare, movingPiece) {
+function detectSkewer(chessAfter, fromSq, movingPiece) {
   if (!['b', 'r', 'q'].includes(movingPiece.type)) return null;
   const opponent = movingPiece.color === 'w' ? 'b' : 'w';
   const dirs = movingPiece.type === 'r'
-    ? [[1, 0], [-1, 0], [0, 1], [0, -1]]
+    ? [[1,0],[-1,0],[0,1],[0,-1]]
     : movingPiece.type === 'b'
-    ? [[1, 1], [-1, 1], [1, -1], [-1, -1]]
-    : [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  const [f0, r0] = squareToFR(toSquare);
+    ? [[1,1],[-1,1],[1,-1],[-1,-1]]
+    : [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+  const [f0, r0] = squareToFR(fromSq);
   for (const [df, dr] of dirs) {
     let first = null, second = null;
     for (let i = 1; i < 8; i++) {
@@ -242,411 +241,599 @@ function detectSkewer(chessAfter, toSquare, movingPiece) {
   }
   return null;
 }
-function detectDiscoveredCheck(chessAfter, toSquare, movingPiece) {
+function detectDiscoveredCheck(chessAfter, toSq, movingPiece) {
   if (!chessAfter.inCheck()) return false;
   const opponent = movingPiece.color === 'w' ? 'b' : 'w';
   const kingSq = findKing(chessAfter, opponent);
   if (!kingSq) return false;
   const checkers = chessAfter.attackers(kingSq, movingPiece.color);
   if (!checkers || checkers.length === 0) return false;
-  return !checkers.includes(toSquare);
+  return !checkers.includes(toSq);
+}
+// Trapped piece: opponent piece (n/b/r/q) where every legal move lands it
+// on a hanging square. Skipped if 0 moves (likely pinned, separate concept).
+function isTrappedOpponentPiece(chess, square) {
+  const piece = chess.get(square);
+  if (!piece || piece.type === 'k' || piece.type === 'p') return false;
+  const moves = chess.moves({ square, verbose: true });
+  if (moves.length === 0) return false;
+  const fenSnap = chess.fen();
+  for (const m of moves) {
+    try {
+      chess.move(m);
+      const safe = !isHangingApprox(chess, m.to);
+      chess.load(fenSnap);
+      if (safe) return false;
+    } catch {
+      try { chess.load(fenSnap); } catch { /* ignore */ }
+    }
+  }
+  return true;
 }
 
-// Compute a tagline + structured motifs for a hypothetical move.
-// fenBefore: position before the move; moveUCI: e.g. "e2e4" or "e7e8q".
-export function quickExplain(fenBefore, moveUCI) {
-  if (typeof moveUCI !== 'string' || moveUCI.length < 4) {
-    return { san: moveUCI, motifs: [], tagline: '' };
+// ── Centralization (real central control gain) ─────────────────────────────
+const CENTER_LARGE = new Set(['c3','c4','c5','c6','d3','d4','d5','d6','e3','e4','e5','e6','f3','f4','f5','f6']);
+const CENTER_CORE  = new Set(['d4','d5','e4','e5']);
+function centralControlOf(chess, fromSquare) {
+  const attacked = squaresAttackedFrom(chess, fromSquare);
+  let core = 0, large = 0;
+  for (const sq of attacked) {
+    if (CENTER_CORE.has(sq)) core++;
+    else if (CENTER_LARGE.has(sq)) large++;
   }
+  return { core, large };
+}
+
+// ── Mobility ────────────────────────────────────────────────────────────────
+function pieceMobility(chess, square) {
+  return chess.moves({ square, verbose: true }).length;
+}
+function totalMobility(chess) {
+  return chess.moves({ verbose: true }).length;
+}
+
+// ── Bishop diagnostics ──────────────────────────────────────────────────────
+function isBadBishop(chess, square, piece) {
+  if (piece.type !== 'b') return false;
+  const myColor = piece.color;
+  const lightBishop = squareIsLight(square);
+  let blocking = 0;
+  const board = chess.board();
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (!p || p.type !== 'p' || p.color !== myColor) continue;
+    const sq = frToSquare(f, 7 - r);
+    if (squareIsLight(sq) === lightBishop) blocking++;
+  }
+  return blocking >= 5;
+}
+function countBishops(chess, color) {
+  return findPieces(chess, color, 'b').length;
+}
+
+// ── Battery (must be aimed at a meaningful target) ─────────────────────────
+function detectBatteryAimed(chessAfter, fromSquare, movingPiece) {
+  if (!['b', 'r', 'q'].includes(movingPiece.type)) return null;
+  const dirs = movingPiece.type === 'r'
+    ? [[1,0],[-1,0],[0,1],[0,-1]]
+    : movingPiece.type === 'b'
+    ? [[1,1],[-1,1],[1,-1],[-1,-1]]
+    : [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+  const [f0, r0] = squareToFR(fromSquare);
+  // Search both forward and backward along every ray for a friendly slider
+  // partner; in either case, also check if the SAME line (extended outward
+  // from us) terminates at a meaningful enemy target (king / queen / rook).
+  for (const [df, dr] of dirs) {
+    // Outward (looking for target through enemies)
+    let target = null;
+    for (let i = 1; i < 8; i++) {
+      const f = f0 + df * i, r = r0 + dr * i;
+      if (f < 0 || f > 7 || r < 0 || r > 7) break;
+      const p = chessAfter.get(frToSquare(f, r));
+      if (!p) continue;
+      if (p.color === movingPiece.color) break; // friendly blocks
+      if (['k','q','r'].includes(p.type)) target = { sq: frToSquare(f, r), type: p.type };
+      break;
+    }
+    // Backward (looking for partner)
+    let partner = null;
+    for (let i = 1; i < 8; i++) {
+      const f = f0 - df * i, r = r0 - dr * i;
+      if (f < 0 || f > 7 || r < 0 || r > 7) break;
+      const p = chessAfter.get(frToSquare(f, r));
+      if (!p) continue;
+      if (p.color !== movingPiece.color) break;
+      if (['b','r','q'].includes(p.type)) {
+        // Partner must move along this ray's directions.
+        const partnerDirs = p.type === 'r' ? [[1,0],[-1,0],[0,1],[0,-1]]
+                          : p.type === 'b' ? [[1,1],[-1,1],[1,-1],[-1,-1]]
+                          : [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+        if (partnerDirs.some(([dx, dy]) => dx === df && dy === dr)) {
+          partner = { type: p.type };
+        }
+      }
+      break;
+    }
+    if (partner && target) return { partner, target };
+  }
+  return null;
+}
+
+// ── Connected rooks ────────────────────────────────────────────────────────
+function detectConnectsRooks(chessAfter, color) {
+  const rooks = findPieces(chessAfter, color, 'r');
+  if (rooks.length < 2) return false;
+  // Same back rank with no pieces between?
+  const backRank = color === 'w' ? 0 : 7;
+  const onBack = rooks.filter(r => squareToFR(r.square)[1] === backRank);
+  if (onBack.length < 2) return false;
+  const [a, b] = onBack;
+  const [af] = squareToFR(a.square);
+  const [bf] = squareToFR(b.square);
+  const lo = Math.min(af, bf), hi = Math.max(af, bf);
+  for (let f = lo + 1; f < hi; f++) {
+    if (chessAfter.get(frToSquare(f, backRank))) return false;
+  }
+  return true;
+}
+
+// ── Knight on the rim (a/h file, opening) ──────────────────────────────────
+function isKnightOnRim(chess, square, piece, moveNumber) {
+  if (piece.type !== 'n' || moveNumber > 16) return false;
+  const [file] = squareToFR(square);
+  return file === 0 || file === 7;
+}
+
+// ── Luft (back-rank king + adjacent pawn pushes one) ───────────────────────
+function isLuft(chessBefore, chessAfter, fromSquare, toSquare, movingPiece, moverColor) {
+  if (movingPiece.type !== 'p') return false;
+  const kingSq = findKing(chessAfter, moverColor);
+  if (!kingSq) return false;
+  const kingRank = parseInt(kingSq[1], 10) - 1;
+  const expectedKingRank = moverColor === 'w' ? 0 : 7;
+  if (kingRank !== expectedKingRank) return false;
+  const [kf] = squareToFR(kingSq);
+  const [pf] = squareToFR(fromSquare);
+  // Pawn must be near the king (within 2 files).
+  if (Math.abs(kf - pf) > 2) return false;
+  // Single-square push.
+  const [, fr] = squareToFR(fromSquare);
+  const [, tr] = squareToFR(toSquare);
+  if (Math.abs(tr - fr) !== 1) return false;
+  return true;
+}
+
+// ── Pawn storm (multiple advanced pawns toward enemy king's wing) ───────────
+function isPawnStorm(chessAfter, toSquare, movingPiece, moverColor, opponentColor) {
+  if (movingPiece.type !== 'p') return false;
+  const oppKing = findKing(chessAfter, opponentColor);
+  if (!oppKing) return false;
+  const [okf] = squareToFR(oppKing);
+  const [tf, tr] = squareToFR(toSquare);
+  // Same wing: queenside (files 0-3) or kingside (files 4-7).
+  const sameWing = (okf <= 3) === (tf <= 3);
+  if (!sameWing) return false;
+  // The moving pawn must be advanced past its starting rank (white > 1, black < 6).
+  const pawnAdvanced = moverColor === 'w' ? tr >= 3 : tr <= 4;
+  if (!pawnAdvanced) return false;
+  // At least one OTHER friendly pawn already advanced past starting rank on the same wing.
+  let buddies = 0;
+  for (let f = 0; f < 8; f++) {
+    if (sameWing && ((okf <= 3 ? f > 3 : f <= 3))) continue;
+    for (let r = 0; r < 8; r++) {
+      const p = chessAfter.get(frToSquare(f, r));
+      if (!p || p.type !== 'p' || p.color !== moverColor) continue;
+      const adv = moverColor === 'w' ? r >= 3 : r <= 4;
+      if (adv) buddies++;
+    }
+  }
+  return buddies >= 2; // includes the just-moved pawn itself
+}
+
+// ── SEE-style sacrifice ────────────────────────────────────────────────────
+function detectSacrificeApprox(chessAfter, toSquare, movingPiece, capturedPiece) {
+  if (!isHangingApprox(chessAfter, toSquare)) return false;
+  const moverVal = PIECE_VALUE[movingPiece.type] || 100;
+  const recovered = capturedPiece ? (PIECE_VALUE[capturedPiece.type] || 0) : 0;
+  return (moverVal - recovered) >= 200;
+}
+
+// ── Activity (uses real mobility, not just PST) ─────────────────────────────
+function activityChange(chessBefore, chessAfter, fromSquare, toSquare, movingPiece) {
+  // Number of squares the piece attacks before vs. after.
+  const before = squaresAttackedFrom(chessBefore, fromSquare).length;
+  const after = squaresAttackedFrom(chessAfter, toSquare).length;
+  return { before, after, delta: after - before };
+}
+
+// ── Restriction (opponent's mobility shrinks) ──────────────────────────────
+function opponentMobility(chess, opponentColor) {
+  // chess.moves() returns moves for the side to move. We need opponent's,
+  // so quickly hack the FEN turn flag.
+  const fen = chess.fen();
+  const parts = fen.split(' ');
+  parts[1] = opponentColor;
+  // Pseudo-legal moves only (we just need a count, not legality).
+  try {
+    const swapped = new Chess();
+    swapped.load(parts.join(' '));
+    return swapped.moves({ verbose: true }).length;
+  } catch {
+    return 0;
+  }
+}
+
+// ── Move metadata + main entry ──────────────────────────────────────────────
+function parseMove(fenBefore, moveUCI) {
+  if (typeof moveUCI !== 'string' || moveUCI.length < 4) return null;
   const chess = new Chess(fenBefore);
   const from = moveUCI.slice(0, 2);
   const to = moveUCI.slice(2, 4);
   const movingPiece = chess.get(from);
-  if (!movingPiece) return { san: moveUCI, motifs: [], tagline: '' };
+  if (!movingPiece) return null;
   const capturedBefore = chess.get(to);
-  const moverColor = movingPiece.color;
-  const opponentColor = moverColor === 'w' ? 'b' : 'w';
-  const moveNumber = chess.moveNumber();
-
-  // Apply the move.
   let san, flags, promoted;
   try {
     const m = chess.move({ from, to, promotion: moveUCI[4] || 'q' });
-    if (!m) return { san: moveUCI, motifs: [], tagline: '' };
+    if (!m) return null;
     san = m.san; flags = m.flags || ''; promoted = m.promotion;
   } catch {
-    return { san: moveUCI, motifs: [], tagline: '' };
+    return null;
   }
   const fenAfter = chess.fen();
-  const chessAfter = new Chess(fenAfter);
-  const chessBefore = new Chess(fenBefore);
+  return {
+    chessBefore: new Chess(fenBefore),
+    chessAfter: new Chess(fenAfter),
+    fenAfter,
+    from, to,
+    movingPiece, capturedBefore,
+    san, flags, promoted,
+    moverColor: movingPiece.color,
+    opponentColor: movingPiece.color === 'w' ? 'b' : 'w',
+    moveNumber: new Chess(fenBefore).moveNumber(),
+  };
+}
+
+// ── Main: quickExplain ─────────────────────────────────────────────────────
+export function quickExplain(fenBefore, moveUCI) {
+  const M = parseMove(fenBefore, moveUCI);
+  if (!M) return { san: moveUCI, motifs: [], tagline: '' };
 
   const motifs = [];
   const phrases = [];
   const add = (motif, phrase) => { motifs.push(motif); if (phrase) phrases.push(phrase); };
 
-  // ── Terminal states ─────────────────────────────────────────────────────
-  if (chessAfter.isCheckmate()) {
-    return { san, motifs: ['checkmate'], tagline: 'Delivers checkmate' };
+  // Terminal states (early-out).
+  if (M.chessAfter.isCheckmate()) {
+    return { san: M.san, motifs: ['checkmate'], tagline: 'Delivers checkmate', fenAfter: M.fenAfter };
   }
-  if (chessAfter.isStalemate())                { add('stalemate', 'Stalemates the position'); }
-  if (chessAfter.isThreefoldRepetition())      { add('threefold_repetition', 'Repeats the position'); }
-  if (chessAfter.isDrawByFiftyMoves())         { add('fifty_move', 'Triggers the 50-move rule'); }
-  if (chessAfter.isInsufficientMaterial())     { add('insufficient_material', 'Reaches insufficient material'); }
+  if (M.chessAfter.isStalemate())          add('stalemate', 'Stalemates the position');
+  if (M.chessAfter.isThreefoldRepetition()) add('threefold_repetition', 'Repeats the position');
+  if (M.chessAfter.isDrawByFiftyMoves())    add('fifty_move', 'Triggers the 50-move rule');
+  if (M.chessAfter.isInsufficientMaterial())add('insufficient_material', 'Reaches insufficient material');
 
-  // ── Castling ────────────────────────────────────────────────────────────
-  if (flags.includes('k')) {
+  // ── Move-class basics ────────────────────────────────────────────────────
+  if (M.flags.includes('k')) {
     add('castles_kingside', 'Castles kingside');
-    // Connect-rooks: after castle, both rooks are on back rank with no
-    // pieces between them.
-    const backRank = moverColor === 'w' ? 0 : 7;
-    let pieces = 0;
-    for (let f = 0; f < 8; f++) {
-      const p = chessAfter.get(frToSquare(f, backRank));
-      if (p && p.color === moverColor) pieces++;
-    }
-    if (pieces >= 3) add('connects_rooks', null); // implicit, no extra phrase
-  } else if (flags.includes('q')) {
+    if (detectConnectsRooks(M.chessAfter, M.moverColor)) add('connects_rooks', null);
+  } else if (M.flags.includes('q')) {
     add('castles_queenside', 'Castles queenside');
+    if (detectConnectsRooks(M.chessAfter, M.moverColor)) add('connects_rooks', null);
   }
+  if (M.flags.includes('e')) add('en_passant', 'Captures en passant');
+  if (M.flags.includes('p') && M.promoted) add('promotion', `Promotes to ${PIECE_NAME[M.promoted]}`);
 
-  // ── En passant / promotion ──────────────────────────────────────────────
-  if (flags.includes('e')) add('en_passant', 'Captures en passant');
-  if (flags.includes('p') && promoted) {
-    add('promotion', `Promotes to ${PIECE_NAME[promoted]}`);
-  }
-
-  // ── Capture / trade ─────────────────────────────────────────────────────
-  if (capturedBefore && !flags.includes('e')) {
-    const cName = PIECE_NAME[capturedBefore.type];
-    if (capturedBefore.type === 'q' && movingPiece.type === 'q') {
+  // Captures and trades — discriminate.
+  if (M.capturedBefore && !M.flags.includes('e')) {
+    const capName = PIECE_NAME[M.capturedBefore.type];
+    if (M.capturedBefore.type === 'q' && M.movingPiece.type === 'q') {
       add('queen_trade', 'Trades queens');
-    } else if (capturedBefore.type === movingPiece.type) {
-      add('piece_trade', `Trades ${PIECE_NAME[movingPiece.type]}s`);
-    } else if (movingPiece.type === 'r' && ['n', 'b'].includes(capturedBefore.type)) {
-      add('exchange_sacrifice', `Gives the exchange for the ${cName}`);
+    } else if (M.capturedBefore.type === M.movingPiece.type) {
+      add('piece_trade', `Trades ${PIECE_NAME[M.movingPiece.type]}s`);
+    } else if (M.movingPiece.type === 'r' && ['n', 'b'].includes(M.capturedBefore.type)) {
+      add('exchange_sacrifice', `Gives the exchange for the ${capName}`);
     } else {
-      add('capture', `Captures the ${cName}`);
+      add('capture', `Captures the ${capName}`);
     }
   }
 
-  // ── Check (only if not already mate-handled) ────────────────────────────
-  if (chessAfter.inCheck()) {
-    if (detectDiscoveredCheck(chessAfter, to, movingPiece)) {
+  // Check / discovered check.
+  if (M.chessAfter.inCheck()) {
+    if (detectDiscoveredCheck(M.chessAfter, M.to, M.movingPiece)) {
       add('discovered_check', 'Discovered check');
     } else {
       add('check', 'Gives check');
     }
   }
 
-  // ── Tactical motifs ─────────────────────────────────────────────────────
-  const attackedAfter = squaresAttackedFrom(chessAfter, to).filter(sq => {
-    const p = chessAfter.get(sq);
-    return p && p.color === opponentColor;
+  // ── Tactical motifs ──────────────────────────────────────────────────────
+  const attackedAfter = squaresAttackedFrom(M.chessAfter, M.to).filter(sq => {
+    const p = M.chessAfter.get(sq);
+    return p && p.color === M.opponentColor;
   });
-  const moverVal = PIECE_VALUE[movingPiece.type] || 100;
+  const moverVal = PIECE_VALUE[M.movingPiece.type] || 100;
 
-  // Fork: 2+ enemy pieces attacked, with at least one ≥ mover value (or king).
   if (attackedAfter.length >= 2) {
     const significant = attackedAfter.filter(sq => {
-      const p = chessAfter.get(sq);
+      const p = M.chessAfter.get(sq);
       return p.type === 'k' || (PIECE_VALUE[p.type] || 0) > moverVal;
     });
     if (significant.length >= 1) {
-      const types = attackedAfter.map(sq => PIECE_NAME[chessAfter.get(sq).type]);
-      add('fork', `Forks ${[...new Set(types)].slice(0, 2).join(' and ')}`);
+      const types = [...new Set(attackedAfter.map(sq => PIECE_NAME[M.chessAfter.get(sq).type]))];
+      add('fork', `Forks ${types.slice(0, 2).join(' and ')}`);
     }
   }
-  // Threatens (only one valuable target).
   if (!motifs.includes('fork')) {
     const valuable = attackedAfter.filter(sq => {
-      const p = chessAfter.get(sq);
+      const p = M.chessAfter.get(sq);
       return p.type !== 'k' && (PIECE_VALUE[p.type] || 0) > moverVal;
     });
     if (valuable.length > 0) {
-      add('threatens', `Threatens the ${PIECE_NAME[chessAfter.get(valuable[0]).type]}`);
+      add('threatens', `Threatens the ${PIECE_NAME[M.chessAfter.get(valuable[0]).type]}`);
     }
   }
-  // Pin / skewer.
-  const pin = detectPin(chessAfter, to, movingPiece);
+
+  const pin = detectPin(M.chessAfter, M.to, M.movingPiece);
   if (pin) add('pin', `Pins the ${PIECE_NAME[pin.pinned]} to the ${PIECE_NAME[pin.behind]}`);
-  const skewer = detectSkewer(chessAfter, to, movingPiece);
+
+  const skewer = detectSkewer(M.chessAfter, M.to, M.movingPiece);
   if (skewer) add('skewer', `Skewers the ${PIECE_NAME[skewer.skewered]}, exposing the ${PIECE_NAME[skewer.behind]}`);
-  // Sacrifice (SEE approx).
-  if (detectSacrificeApprox(chessAfter, to, movingPiece, capturedBefore)) {
-    add('sacrifice', `Sacrifices the ${PIECE_NAME[movingPiece.type]}`);
-  } else if (isHangingApprox(chessAfter, to) && movingPiece.type !== 'p') {
-    add('hangs', `The ${PIECE_NAME[movingPiece.type]} is left undefended`);
+
+  if (detectSacrificeApprox(M.chessAfter, M.to, M.movingPiece, M.capturedBefore)) {
+    add('sacrifice', `Sacrifices the ${PIECE_NAME[M.movingPiece.type]}`);
+  } else if (isHangingApprox(M.chessAfter, M.to) && M.movingPiece.type !== 'p') {
+    add('hangs', `The ${PIECE_NAME[M.movingPiece.type]} is left undefended`);
   }
 
-  // ── Strategic / positional motifs ───────────────────────────────────────
-
-  // Develops (early game minor piece off back rank).
-  if (moveNumber <= 12 && ['n', 'b'].includes(movingPiece.type)) {
-    const startRank = moverColor === 'w' ? '1' : '8';
-    if (from[1] === startRank) add('develops', `Develops the ${PIECE_NAME[movingPiece.type]}`);
-  }
-
-  // Centralizes (move to e4/d4/e5/d5).
-  const center = ['d4', 'd5', 'e4', 'e5'];
-  if (center.includes(to) && !motifs.includes('develops')) {
-    if (movingPiece.type === 'p') add('centralizes', 'Stakes a claim in the center');
-    else if (['n', 'b'].includes(movingPiece.type)) add('centralizes', 'Centralizes a piece');
-  }
-
-  // Outpost (knight or bishop on a square no enemy pawn can attack).
-  if (['n', 'b'].includes(movingPiece.type) && isOutpost(chessAfter, to, movingPiece)) {
-    add('outpost', `Establishes an outpost on ${to}`);
-  }
-
-  // Fianchetto (bishop to b2/g2 white, b7/g7 black).
-  if (movingPiece.type === 'b') {
-    if ((moverColor === 'w' && (to === 'b2' || to === 'g2')) ||
-        (moverColor === 'b' && (to === 'b7' || to === 'g7'))) {
-      add('fianchetto', 'Fianchettos the bishop');
-    }
-  }
-
-  // Doubles rooks.
-  if (movingPiece.type === 'r') {
-    const [fileIdx] = squareToFR(to);
-    let ourRooksOnFile = 0;
-    let myPawnsOnFile = 0;
-    let theirPawnsOnFile = 0;
-    for (let r = 0; r < 8; r++) {
-      const p = chessAfter.get(frToSquare(fileIdx, r));
-      if (!p) continue;
-      if (p.type === 'r' && p.color === moverColor) ourRooksOnFile++;
-      if (p.type === 'p') {
-        if (p.color === moverColor) myPawnsOnFile++;
-        else theirPawnsOnFile++;
+  // Defends a previously-hanging friendly piece.
+  {
+    const board = M.chessBefore.board();
+    let defended = null;
+    for (let r = 0; r < 8 && !defended; r++) for (let f = 0; f < 8 && !defended; f++) {
+      const p = board[r][f];
+      if (!p || p.color !== M.moverColor || p.type === 'k') continue;
+      const sq = frToSquare(f, 7 - r);
+      if (sq === M.from) continue;
+      if (isHangingApprox(M.chessBefore, sq) && !isHangingApprox(M.chessAfter, sq)) {
+        defended = { sq, type: p.type };
       }
     }
-    if (ourRooksOnFile >= 2) {
-      add('doubles_rooks', `Doubles rooks on the ${fileLetter(fileIdx)}-file`);
-    } else if (myPawnsOnFile === 0 && theirPawnsOnFile === 0) {
-      add('open_file', `Posts the rook on the open ${fileLetter(fileIdx)}-file`);
-    } else if (myPawnsOnFile === 0 && theirPawnsOnFile >= 1) {
-      add('semi_open_file', `Posts on the semi-open ${fileLetter(fileIdx)}-file`);
-    }
-    if (isRookOnSeventh(to, moverColor)) {
-      add('rook_seventh', 'Rook on the seventh');
-    }
+    if (defended) add('defends', `Defends the ${PIECE_NAME[defended.type]}`);
   }
 
-  // Battery (queen + rook / queen + bishop / rook + rook on same line).
-  if (!motifs.includes('doubles_rooks')) {
-    const battery = detectBattery(chessAfter, to, movingPiece);
-    if (battery && (movingPiece.type === 'q' || movingPiece.type === 'r' || movingPiece.type === 'b')) {
-      add('battery', `Forms a battery with the ${PIECE_NAME[battery.partner.type]}`);
-    }
-  }
-
-  // Pawn-specific: pawn break / lever / passed pawn / storm.
-  if (movingPiece.type === 'p') {
-    if (capturedBefore) {
-      add('pawn_break', 'Pawn break');
-    } else {
-      // Lever: move places pawn diagonally adjacent to enemy pawn (next move would capture).
-      const [tf, tr] = squareToFR(to);
-      const forward = moverColor === 'w' ? 1 : -1;
-      let lever = false;
-      for (const df of [-1, 1]) {
-        const f = tf + df, r = tr + forward;
-        if (f < 0 || f > 7 || r < 0 || r > 7) continue;
-        const p = chessAfter.get(frToSquare(f, r));
-        if (p && p.type === 'p' && p.color === opponentColor) { lever = true; break; }
-      }
-      if (lever) add('pawn_lever', 'Creates a pawn lever');
-    }
-    // Passed pawn after move?
-    if (isPassed(chessAfter, to, moverColor)) {
-      add('passed_pawn', 'Creates a passed pawn');
-    }
-    // Pawn storm: pawn advances toward enemy king, in front of it within 3 files.
-    const oppKing = findKing(chessAfter, opponentColor);
-    if (oppKing) {
-      const [kf, kr] = squareToFR(oppKing);
-      const [tf, tr] = squareToFR(to);
-      const aimedAtKing = Math.abs(tf - kf) <= 2;
-      const advancing = (moverColor === 'w' && tr >= 3) || (moverColor === 'b' && tr <= 4);
-      if (aimedAtKing && advancing && !motifs.includes('pawn_break')) {
-        add('pawn_storm', 'Joins the pawn storm');
+  // Creates threat: opponent piece becomes hanging.
+  if (!motifs.includes('threatens') && !motifs.includes('fork')) {
+    const board = M.chessAfter.board();
+    let newlyHanging = null;
+    for (let r = 0; r < 8 && !newlyHanging; r++) for (let f = 0; f < 8 && !newlyHanging; f++) {
+      const p = board[r][f];
+      if (!p || p.color !== M.opponentColor || p.type === 'k') continue;
+      const sq = frToSquare(f, 7 - r);
+      if (isHangingApprox(M.chessAfter, sq) && !isHangingApprox(M.chessBefore, sq)) {
+        newlyHanging = { sq, type: p.type };
       }
     }
+    if (newlyHanging) add('creates_threat', `Creates a threat on the ${PIECE_NAME[newlyHanging.type]}`);
   }
 
-  // Pawn-structure side effects (after move).
-  const myPawnsAfter = pawnsByFile(chessAfter, moverColor);
-  const myPawnsBefore = pawnsByFile(chessBefore, moverColor);
-  const oppPawnsAfter = pawnsByFile(chessAfter, opponentColor);
-  const oppPawnsBefore = pawnsByFile(chessBefore, opponentColor);
-  // Did we double the OPPONENT's pawns by capturing?
-  if (capturedBefore && capturedBefore.type === 'p' && movingPiece.type !== 'p') {
-    const [tf] = squareToFR(to);
-    if (oppPawnsAfter[tf] > oppPawnsBefore[tf]
-        || (oppPawnsAfter[tf] >= 2 && oppPawnsBefore[tf] < 2)) {
-      add('doubled_pawns_them', 'Doubles the opponent\'s pawns');
+  // Trapped piece — does this move trap an opponent piece?
+  // Only check pieces we attack (cheaper than scanning all opponent pieces).
+  {
+    let trapped = null;
+    for (const sq of attackedAfter) {
+      const p = M.chessAfter.get(sq);
+      if (!p || p.type === 'k' || p.type === 'p') continue;
+      if (isTrappedOpponentPiece(M.chessAfter, sq)) {
+        trapped = { sq, type: p.type };
+        break;
+      }
     }
-  }
-  // Isolated our pawn? (move that leaves a pawn isolated)
-  if (movingPiece.type === 'p') {
-    const [tf] = squareToFR(to);
-    if (myPawnsAfter[tf] >= 1 && isIsolated(tf, myPawnsAfter)) {
-      add('isolated_pawn', 'Isolates the pawn');
-    }
+    if (trapped) add('traps_piece', `Traps the ${PIECE_NAME[trapped.type]}`);
   }
 
-  // King attack: major piece moves close to enemy king (only if no stronger
-  // tactical motif already filed).
-  if (!motifs.some(m => ['fork', 'pin', 'skewer', 'check', 'discovered_check'].includes(m))) {
-    const oppKing = findKing(chessAfter, opponentColor);
-    if (oppKing && ['q', 'r', 'b', 'n'].includes(movingPiece.type)) {
-      const distAfter = chebyshev(to, oppKing);
-      const distBefore = chebyshev(from, oppKing);
+  // ── King-attack ──────────────────────────────────────────────────────────
+  if (!motifs.some(m => ['fork','pin','skewer','check','discovered_check','traps_piece'].includes(m))) {
+    const oppKing = findKing(M.chessAfter, M.opponentColor);
+    if (oppKing && ['q','r','b','n'].includes(M.movingPiece.type)) {
+      const distAfter = chebyshev(M.to, oppKing);
+      const distBefore = chebyshev(M.from, oppKing);
       if (distAfter < distBefore && distAfter <= 3) {
         add('attacks_king', "Increases pressure on the king");
       }
     }
   }
 
-  // ── Defends a previously-hanging piece ──────────────────────────────────
-  // Compare hanging-piece sets before/after for our own pieces.
-  {
-    const board = chessBefore.board();
-    let defendedSquare = null;
-    for (let r = 0; r < 8 && !defendedSquare; r++) {
-      for (let f = 0; f < 8 && !defendedSquare; f++) {
-        const p = board[r][f];
-        if (!p || p.color !== moverColor || p.type === 'k') continue;
-        const sq = frToSquare(f, 7 - r);
-        if (sq === from) continue; // the moving piece doesn't count
-        if (isHangingApprox(chessBefore, sq) && !isHangingApprox(chessAfter, sq)) {
-          defendedSquare = { sq, type: p.type };
-        }
+  // Luft — back-rank king + 1-square pawn push next to it.
+  if (isLuft(M.chessBefore, M.chessAfter, M.from, M.to, M.movingPiece, M.moverColor)) {
+    add('luft', "Creates luft for the king");
+  }
+
+  // ── Piece-specific positional ───────────────────────────────────────────
+  // Develops: minor piece off the back rank in the opening AND we've never
+  // moved this piece type from this file before. Approximated as just
+  // "from = back rank, move number ≤ 12".
+  if (M.moveNumber <= 12 && ['n','b'].includes(M.movingPiece.type)) {
+    const startRank = M.moverColor === 'w' ? '1' : '8';
+    if (M.from[1] === startRank) add('develops', `Develops the ${PIECE_NAME[M.movingPiece.type]}`);
+  }
+
+  // Knight on the rim — usually a bad sign in the opening.
+  if (isKnightOnRim(M.chessAfter, M.to, M.movingPiece, M.moveNumber)) {
+    add('knight_on_rim', `${PIECE_NAME[M.movingPiece.type]} drifts to the rim`);
+  }
+
+  // Centralizes — actual central control gain, not just "lands on d4".
+  if (['n','b','q','r','p'].includes(M.movingPiece.type)) {
+    const before = M.movingPiece.type === 'p'
+      ? (CENTER_CORE.has(M.from) ? 1 : 0)
+      : centralControlOf(M.chessBefore, M.from).core
+        + 0.5 * centralControlOf(M.chessBefore, M.from).large;
+    const after = M.movingPiece.type === 'p'
+      ? (CENTER_CORE.has(M.to) ? 1 : 0)
+      : centralControlOf(M.chessAfter, M.to).core
+        + 0.5 * centralControlOf(M.chessAfter, M.to).large;
+    if (after - before >= 1.5 && !motifs.includes('develops')) {
+      if (M.movingPiece.type === 'p' && CENTER_CORE.has(M.to)) {
+        add('centralizes', 'Stakes a claim in the center');
+      } else if (['n','b'].includes(M.movingPiece.type)) {
+        add('centralizes', `Centralizes the ${PIECE_NAME[M.movingPiece.type]}`);
+      } else {
+        add('centralizes', `Brings the ${PIECE_NAME[M.movingPiece.type]} into the center`);
       }
-    }
-    if (defendedSquare) {
-      add('defends', `Defends the ${PIECE_NAME[defendedSquare.type]}`);
     }
   }
 
-  // ── Creates a new threat ────────────────────────────────────────────────
-  // An opponent piece that wasn't hanging before is now hanging.
-  {
-    const board = chessAfter.board();
-    let newlyHanging = null;
-    for (let r = 0; r < 8 && !newlyHanging; r++) {
-      for (let f = 0; f < 8 && !newlyHanging; f++) {
-        const p = board[r][f];
-        if (!p || p.color !== opponentColor || p.type === 'k') continue;
-        const sq = frToSquare(f, 7 - r);
-        if (isHangingApprox(chessAfter, sq) && !isHangingApprox(chessBefore, sq)) {
-          newlyHanging = { sq, type: p.type };
-        }
-      }
-    }
-    if (newlyHanging && !motifs.includes('threatens') && !motifs.includes('fork')) {
-      add('creates_threat', `Creates a threat on the ${PIECE_NAME[newlyHanging.type]}`);
+  // Outpost on a strong square (with friendly-pawn support or rank 5+).
+  if (['n','b'].includes(M.movingPiece.type) && isOutpost(M.chessAfter, M.to, M.movingPiece)) {
+    add('outpost', `Establishes an outpost on ${M.to}`);
+  }
+
+  // Fianchetto.
+  if (M.movingPiece.type === 'b') {
+    if ((M.moverColor === 'w' && (M.to === 'b2' || M.to === 'g2')) ||
+        (M.moverColor === 'b' && (M.to === 'b7' || M.to === 'g7'))) {
+      add('fianchetto', 'Fianchettos the bishop');
     }
   }
 
-  // ── Tempo: develops while attacking something ──────────────────────────
+  // ── Rook-specific ───────────────────────────────────────────────────────
+  if (M.movingPiece.type === 'r') {
+    const [fileIdx] = squareToFR(M.to);
+    let ourRooksOnFile = 0, myPawns = 0, theirPawns = 0;
+    for (let r = 0; r < 8; r++) {
+      const p = M.chessAfter.get(frToSquare(fileIdx, r));
+      if (!p) continue;
+      if (p.type === 'r' && p.color === M.moverColor) ourRooksOnFile++;
+      if (p.type === 'p') {
+        if (p.color === M.moverColor) myPawns++;
+        else theirPawns++;
+      }
+    }
+    if (ourRooksOnFile >= 2)             add('doubles_rooks', `Doubles rooks on the ${fileLetter(fileIdx)}-file`);
+    else if (myPawns === 0 && theirPawns === 0) add('open_file',     `Posts the rook on the open ${fileLetter(fileIdx)}-file`);
+    else if (myPawns === 0 && theirPawns >= 1)  add('semi_open_file',`Posts on the semi-open ${fileLetter(fileIdx)}-file`);
+    if ((M.moverColor === 'w' && M.to[1] === '7') ||
+        (M.moverColor === 'b' && M.to[1] === '2')) {
+      add('rook_seventh', 'Rook on the seventh');
+    }
+  }
+
+  // Battery — only if it's actually aimed at a meaningful target.
+  if (!motifs.includes('doubles_rooks')) {
+    const battery = detectBatteryAimed(M.chessAfter, M.to, M.movingPiece);
+    if (battery) add('battery', `Lines up with the ${PIECE_NAME[battery.partner.type]} aimed at the ${PIECE_NAME[battery.target.type]}`);
+  }
+
+  // Bishop pair lost?
+  {
+    const before = countBishops(M.chessBefore, M.moverColor);
+    const after = countBishops(M.chessAfter, M.moverColor);
+    if (M.movingPiece.type === 'b' && after < before) {
+      const oppBefore = countBishops(M.chessBefore, M.opponentColor);
+      if (oppBefore >= 2 && before === 2) add('bishop_pair_lost', 'Gives up the bishop pair');
+    }
+  }
+
+  // Bad-bishop diagnosis.
+  if (M.movingPiece.type === 'b' && isBadBishop(M.chessAfter, M.to, M.movingPiece)) {
+    add('bad_bishop', 'Bishop is hemmed in by its own pawns');
+  }
+
+  // ── Pawn-specific ───────────────────────────────────────────────────────
+  if (M.movingPiece.type === 'p') {
+    if (M.capturedBefore) {
+      add('pawn_break', 'Pawn break');
+    } else {
+      // Lever
+      const [tf, tr] = squareToFR(M.to);
+      const fwd = M.moverColor === 'w' ? 1 : -1;
+      let lever = false;
+      for (const df of [-1, 1]) {
+        const f = tf + df, r = tr + fwd;
+        if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+        const p = M.chessAfter.get(frToSquare(f, r));
+        if (p && p.type === 'p' && p.color === M.opponentColor) { lever = true; break; }
+      }
+      if (lever) add('pawn_lever', 'Creates a pawn lever');
+    }
+    if (isPassed(M.chessAfter, M.to, M.moverColor)) {
+      add('passed_pawn', 'Creates a passed pawn');
+    }
+    if (isPawnStorm(M.chessAfter, M.to, M.movingPiece, M.moverColor, M.opponentColor)
+        && !motifs.includes('pawn_break')) {
+      add('pawn_storm', 'Joins the pawn storm');
+    }
+  }
+
+  // Pawn structure side-effects (whoever moved).
+  const myPawnsAfter = pawnsByFile(M.chessAfter, M.moverColor);
+  const oppPawnsAfter = pawnsByFile(M.chessAfter, M.opponentColor);
+  const oppPawnsBefore = pawnsByFile(M.chessBefore, M.opponentColor);
+
+  if (M.capturedBefore && M.capturedBefore.type === 'p' && M.movingPiece.type !== 'p') {
+    const [tf] = squareToFR(M.to);
+    if (oppPawnsAfter[tf] >= 2 && oppPawnsBefore[tf] < 2) {
+      add('doubled_pawns_them', "Doubles the opponent's pawns");
+    }
+  }
+  if (M.movingPiece.type === 'p') {
+    const [tf] = squareToFR(M.to);
+    if (myPawnsAfter[tf] >= 1 && isIsolated(tf, myPawnsAfter)) {
+      add('isolated_pawn', 'Isolates the pawn');
+    }
+  }
+  // Backward pawn imposed on opponent? Check enemy pawns near our move.
+  for (let f = 0; f < 8; f++) {
+    for (let r = 0; r < 8; r++) {
+      const sq = frToSquare(f, r);
+      const p = M.chessAfter.get(sq);
+      if (!p || p.type !== 'p' || p.color !== M.opponentColor) continue;
+      const wasBackward = isBackwardPawn(M.chessBefore, sq, M.opponentColor);
+      const isBackwardNow = isBackwardPawn(M.chessAfter, sq, M.opponentColor);
+      if (!wasBackward && isBackwardNow) {
+        add('backward_pawn_them', `Saddles the opponent with a backward ${fileLetter(f)}-pawn`);
+        break;
+      }
+    }
+    if (motifs.includes('backward_pawn_them')) break;
+  }
+
+  // ── Activity / restriction (real mobility, not PST) ─────────────────────
+  const act = activityChange(M.chessBefore, M.chessAfter, M.from, M.to, M.movingPiece);
+  // Restriction: opponent's pseudo-legal move count drops noticeably.
+  let oppMobBefore = 0, oppMobAfter = 0;
+  try {
+    oppMobBefore = opponentMobility(M.chessBefore, M.opponentColor);
+    oppMobAfter  = opponentMobility(M.chessAfter,  M.opponentColor);
+  } catch { /* ignore */ }
+  const restrictionDelta = oppMobBefore - oppMobAfter;
+  if (restrictionDelta >= 4
+      && !motifs.includes('check')
+      && !motifs.includes('discovered_check')) {
+    add('restricts', "Restricts the opponent's pieces");
+  }
+
+  // Tempo: develops AND has a threat.
   if (motifs.includes('develops')
       && (motifs.includes('threatens') || motifs.includes('attacks_king')
           || motifs.includes('creates_threat'))) {
     add('tempo', null);
   }
 
-  // ── Maneuvers / repositions: a meaningful PST gain even with no
-  //    tactical action. Used to make the fallback richer than "Quiet X". ─
-  // (Computed but only applied as fallback if nothing else fires.)
-  function pstFor(pieceType, square, color) {
-    // Tiny embedded PST (matches the explainer's): just the central
-    // bias for knight + bishop is enough to call out activity gains.
-    const KN = [
-      [-50,-40,-30,-30,-30,-30,-40,-50],
-      [-40,-20,  0,  5,  5,  0,-20,-40],
-      [-30,  5, 10, 15, 15, 10,  5,-30],
-      [-30,  0, 15, 20, 20, 15,  0,-30],
-      [-30,  5, 15, 20, 20, 15,  5,-30],
-      [-30,  0, 10, 15, 15, 10,  0,-30],
-      [-40,-20,  0,  0,  0,  0,-20,-40],
-      [-50,-40,-30,-30,-30,-30,-40,-50],
-    ];
-    const BI = [
-      [-20,-10,-10,-10,-10,-10,-10,-20],
-      [-10,  5,  0,  0,  0,  0,  5,-10],
-      [-10, 10, 10, 10, 10, 10, 10,-10],
-      [-10,  0, 10, 10, 10, 10,  0,-10],
-      [-10,  5,  5, 10, 10,  5,  5,-10],
-      [-10,  0,  5, 10, 10,  5,  0,-10],
-      [-10,  0,  0,  0,  0,  0,  0,-10],
-      [-20,-10,-10,-10,-10,-10,-10,-20],
-    ];
-    const tab = pieceType === 'n' ? KN : pieceType === 'b' ? BI : null;
-    if (!tab) return 0;
-    const [f, r] = squareToFR(square);
-    const row = color === 'w' ? 7 - r : r;
-    return tab[row][f];
-  }
-  let activityGain = 0;
-  if (['n', 'b'].includes(movingPiece.type)) {
-    activityGain = pstFor(movingPiece.type, to, moverColor)
-                 - pstFor(movingPiece.type, from, moverColor);
-  }
-
-  // ── Direction hints (used as fallback flavor) ───────────────────────────
-  // Heads toward kingside / queenside / center based on file.
-  const [tf, tr] = squareToFR(to);
-  const [ff, fr] = squareToFR(from);
-  let directionHint = null;
-  const oppKingSq = findKing(chessAfter, opponentColor);
-  if (oppKingSq) {
-    const [okf] = squareToFR(oppKingSq);
-    const closerToKing = Math.abs(tf - okf) < Math.abs(ff - okf)
-                       || (chebyshev(to, oppKingSq) < chebyshev(from, oppKingSq));
-    if (closerToKing) {
-      directionHint = okf >= 4 ? 'Heads toward the kingside' : 'Heads toward the queenside';
-    }
-  }
-  if (!directionHint) {
-    const distFromCenter = (sq) => {
-      const [f, r] = squareToFR(sq);
-      return Math.max(Math.abs(f - 3.5), Math.abs(r - 3.5));
-    };
-    if (distFromCenter(to) < distFromCenter(from) - 0.5) {
-      directionHint = 'Repositions toward the center';
-    }
-  }
-
-  // ── Compose tagline (priority order) ────────────────────────────────────
-  // Higher = more important / surprising. We pick the top 1-2 phrases.
+  // ── Tagline composition ─────────────────────────────────────────────────
   const PRIORITY = [
     'checkmate', 'sacrifice', 'fork', 'discovered_check', 'pin', 'skewer',
     'queen_trade', 'exchange_sacrifice', 'piece_trade', 'capture',
-    'creates_threat', 'threatens', 'check',
+    'creates_threat', 'threatens', 'traps_piece', 'check',
     'castles_kingside', 'castles_queenside', 'promotion', 'en_passant',
     'doubles_rooks', 'rook_seventh', 'open_file', 'semi_open_file',
-    'outpost', 'fianchetto', 'battery', 'attacks_king',
-    'develops', 'centralizes', 'defends',
+    'outpost', 'fianchetto', 'battery', 'attacks_king', 'luft',
+    'develops', 'centralizes', 'defends', 'restricts',
     'pawn_break', 'pawn_lever', 'passed_pawn', 'pawn_storm',
-    'doubled_pawns_them', 'isolated_pawn', 'hangs',
+    'doubled_pawns_them', 'backward_pawn_them', 'isolated_pawn',
+    'knight_on_rim', 'bishop_pair_lost', 'bad_bishop', 'hangs',
     'stalemate', 'threefold_repetition', 'fifty_move', 'insufficient_material',
   ];
-  const orderedPhrases = [];
-  for (const motif of PRIORITY) {
-    if (!motifs.includes(motif)) continue;
-    const idx = motifs.indexOf(motif);
-    if (idx >= 0 && phrases[idx]) {
-      // We don't keep a strict 1-1 mapping; instead, find the phrase whose
-      // text matches typical wording. Simpler: walk the original phrases in
-      // priority order by looking up what was added at the time.
-    }
-  }
-  // Build phrase list by re-iterating motifs in their original add order
-  // but filter to the most "informative" couple. We already pushed phrases
-  // alongside motifs; just dedupe and take top two by priority.
   const motifPhrases = motifs.map((m, i) => ({ motif: m, phrase: phrases[i] }))
     .filter(x => x.phrase);
   motifPhrases.sort((a, b) => {
@@ -654,52 +841,102 @@ export function quickExplain(fenBefore, moveUCI) {
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
-  // Richer fallback than "Quiet X move": pick the most informative thing
-  // we can say about the move based on positional cues we already
-  // computed (PST activity, direction toward king/center).
+  // Special combinations that read more naturally.
+  // capture + threatens → "Captures the X and threatens the Y"
+  // develops + threatens → "Develops with tempo, threatening the X"
+  // capture + check → "Captures the X with check"
+  function combinedPhrase() {
+    const set = new Set(motifs);
+    if (set.has('castles_kingside') && set.has('connects_rooks'))
+      return 'Castles kingside, connecting the rooks';
+    if (set.has('castles_queenside') && set.has('connects_rooks'))
+      return 'Castles queenside, connecting the rooks';
+    if (set.has('capture') && set.has('discovered_check')) {
+      const cap = phrases[motifs.indexOf('capture')];
+      return `${cap} with discovered check`;
+    }
+    if (set.has('capture') && set.has('check')) {
+      const cap = phrases[motifs.indexOf('capture')];
+      return `${cap} with check`;
+    }
+    if (set.has('develops') && (set.has('threatens') || set.has('creates_threat'))) {
+      const dev = phrases[motifs.indexOf('develops')];
+      const thr = phrases[motifs.indexOf(set.has('threatens') ? 'threatens' : 'creates_threat')];
+      return `${dev} with tempo (${thr.toLowerCase()})`;
+    }
+    if (set.has('develops') && set.has('outpost')) {
+      const dev = phrases[motifs.indexOf('develops')];
+      const out = phrases[motifs.indexOf('outpost')];
+      return `${dev}, ${out.toLowerCase()}`;
+    }
+    return null;
+  }
+
+  // Richer fallback than "Quiet X move" — describe activity / direction /
+  // destination so the panel always says something specific.
   function fallbackTagline() {
-    if (activityGain >= 20) {
-      return `Improves the ${PIECE_NAME[movingPiece.type]}'s activity`;
+    const piece = PIECE_NAME[M.movingPiece.type];
+
+    // Activity gain / loss is the single best non-tactical signal.
+    if (act.delta >= 3) return `Activates the ${piece} (now eyes ${act.after} squares)`;
+    if (act.delta >= 1) return `Improves the ${piece}'s scope`;
+    if (act.delta <= -3) return `Pulls the ${piece} back into a passive role`;
+    if (act.delta <= -1) return `Repositions the ${piece}`;
+
+    // Pawn-specific filler.
+    if (M.movingPiece.type === 'p') {
+      const [tf, tr] = squareToFR(M.to);
+      if ((M.moverColor === 'w' && tr === 6) || (M.moverColor === 'b' && tr === 1))
+        return 'Pushes the pawn to the seventh rank';
+      // Defensive pawn push (creates a square that defends an attacked friendly piece).
+      const [, fr] = squareToFR(M.from);
+      const oneSquare = Math.abs(tr - fr) === 1;
+      if (oneSquare) return `Solidifies the ${fileLetter(tf)}-pawn structure`;
+      return `Pushes the ${fileLetter(tf)}-pawn to ${M.to}`;
     }
-    if (activityGain <= -20) {
-      return `Retreats the ${PIECE_NAME[movingPiece.type]}`;
+
+    // Direction toward king vs center.
+    const oppKingSq = findKing(M.chessAfter, M.opponentColor);
+    if (oppKingSq) {
+      const distBefore = chebyshev(M.from, oppKingSq);
+      const distAfter = chebyshev(M.to, oppKingSq);
+      if (distAfter < distBefore && distAfter <= 4) {
+        const [okf] = squareToFR(oppKingSq);
+        const wing = okf >= 4 ? 'kingside' : 'queenside';
+        return `Brings the ${piece} toward the ${wing}`;
+      }
     }
-    if (directionHint) return directionHint;
-    if (movingPiece.type === 'p') {
-      const [, tr2] = squareToFR(to);
-      const onSeventh = (moverColor === 'w' && tr2 === 6) || (moverColor === 'b' && tr2 === 1);
-      if (onSeventh) return 'Pushes the pawn to the seventh rank';
-      return `Pushes the ${fileLetter(squareToFR(to)[0])}-pawn`;
+    const distFromCenter = (sq) => {
+      const [f, r] = squareToFR(sq);
+      return Math.max(Math.abs(f - 3.5), Math.abs(r - 3.5));
+    };
+    if (distFromCenter(M.to) < distFromCenter(M.from) - 0.5) {
+      return `Repositions the ${piece} toward the center`;
     }
-    if (['q', 'r'].includes(movingPiece.type)) {
-      return `Repositions the ${PIECE_NAME[movingPiece.type]} to ${to}`;
+
+    // Heavy pieces just say where they go.
+    if (['q','r'].includes(M.movingPiece.type)) {
+      return `Repositions the ${piece} to ${M.to}`;
     }
-    return `Maneuvers the ${PIECE_NAME[movingPiece.type]} to ${to}`;
+    return `Maneuvers the ${piece} to ${M.to}`;
   }
 
   let tagline;
-  if (motifPhrases.length === 0) {
+  const combo = combinedPhrase();
+  if (combo) {
+    tagline = combo;
+  } else if (motifPhrases.length === 0) {
     tagline = fallbackTagline();
   } else if (motifPhrases.length === 1) {
-    // Even with one motif, append a flavor hint if it adds info.
-    const main = motifPhrases[0].phrase;
-    if (directionHint
-        && !['checkmate','fork','pin','skewer','sacrifice'].includes(motifPhrases[0].motif)
-        && motifPhrases[0].motif !== 'castles_kingside'
-        && motifPhrases[0].motif !== 'castles_queenside') {
-      tagline = `${main}, ${directionHint.toLowerCase()}`;
-    } else {
-      tagline = main;
-    }
+    tagline = motifPhrases[0].phrase;
   } else {
     tagline = motifPhrases.slice(0, 2).map(x => x.phrase).join(', ');
   }
 
-  return { san, motifs, tagline, fenAfter };
+  return { san: M.san, motifs, tagline, fenAfter: M.fenAfter };
 }
 
-// Generate taglines for the first N plies of a PV. Used to show a short
-// narrative under each top move.
+// Run quickExplain on the first N plies of a PV.
 export function explainPV(startFen, pvUcis, plies = 3) {
   let fen = startFen;
   const out = [];
@@ -707,8 +944,8 @@ export function explainPV(startFen, pvUcis, plies = 3) {
     const r = quickExplain(fen, uci);
     if (!r || !r.san) break;
     out.push({ san: r.san, tagline: r.tagline });
-    fen = r.fenAfter || fen;
-    if (!fen) break;
+    if (!r.fenAfter) break;
+    fen = r.fenAfter;
   }
   return out;
 }
