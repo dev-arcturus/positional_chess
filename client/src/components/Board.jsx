@@ -9,6 +9,7 @@ import EvalBar from './EvalBar';
 import CapturedStrip from './CapturedStrip';
 import PositionQualityBars from './PositionQualityBars';
 import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
+import { buildFullExplanation } from '../engine/full-explanation';
 import {
   getTopMoves,
   explainMoveAt,
@@ -144,17 +145,34 @@ export default function Board() {
   // out of book, the last-known opening sticks).
   const [openingName, setOpeningName] = useState(null);
 
-  // Comprehensive structured POSITION explanation blob (distinct from
-  // the per-move `explanation` state above). Powers the position-quality
-  // bars and (later) the LLM-driven prose explanation.
+  // Comprehensive structured POSITION explanation blob.
+  //
+  // Rolled out in two waves so the UI never has to wait on engine
+  // analysis to render *something*:
+  //   1. **Static layer** — the Rust analyzer's `explainPosition(fen)`.
+  //      Returns within ~1ms.  Sets `posExplanation` immediately so
+  //      the position-quality bars draw.
+  //   2. **Engine-augmented layer** — `buildFullExplanation(fen)` runs
+  //      Stockfish multi-PV in the background and overlays
+  //      `engine_attack_potential`, `principal_plan`, and engine-derived
+  //      themes on top of the static blob. Replaces `posExplanation`
+  //      when ready (typically within 1-2 seconds).
+  //
+  // Both fetches are cancellable: a new `fen` aborts the previous
+  // pending engine call so we don't show stale plans.
   const [posExplanation, setPosExplanation] = useState(null);
   React.useEffect(() => {
     if (!wasmIsReady() || !fen) return;
     let cancelled = false;
     const handle = setTimeout(() => {
       if (cancelled) return;
-      const e = explainPosition(fen);
-      if (!cancelled && e) setPosExplanation(e);
+      // Fast path: static blob.
+      const staticE = explainPosition(fen);
+      if (!cancelled && staticE) setPosExplanation(staticE);
+      // Slow path: engine-augmented.
+      buildFullExplanation(fen).then(full => {
+        if (!cancelled && full) setPosExplanation(full);
+      }).catch(() => { /* ignore — static is sufficient */ });
     }, 0);
     return () => { cancelled = true; clearTimeout(handle); };
   }, [fen]);
