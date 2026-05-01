@@ -1,20 +1,24 @@
-// Position-level "heatmap" analyses, ported from the legacy server.
+// Position-level "heatmap" analyses.
 //
-//   getPieceValues(fen)       — for each non-king piece, compute Δ-eval
-//                                if the piece were removed. The bigger the
-//                                drop, the more that piece is "doing" in
-//                                this position.
+//   getPieceValues(fen)       — for each non-king piece, compute its
+//                                contribution to the static evaluation.
+//                                Returns a value in centipawns AND a
+//                                breakdown by head (material, psqt,
+//                                mobility, threats, king-safety, pawns).
 //   streamDestinationValues   — for each legal destination of the moving
 //                                piece, compute the piece's contextual
 //                                worth IF moved there. Streams results
 //                                back via a callback as each destination
-//                                completes (so the UI can render labels
-//                                progressively rather than waiting for
-//                                the whole batch).
+//                                completes.
 //
-// These fire 16+ engine searches in a row, so we use a shallow
-// HEATMAP_DEPTH (10) and lean heavily on the engine LRU cache. Repeat
-// invocations on the same FEN are near-instant.
+// PRIMARY backend: the Rust/WASM static evaluator (Stockfish-style HCE
+// with phase-tapered PSQTs, mobility tables, pawn structure, king safety,
+// threats, bishop pair). One eval per piece, ~1ms total for the whole
+// heatmap. Decomposable so the UI can attribute *why* a knight on f5 is
+// worth +480cp.
+//
+// FALLBACK: the legacy engine-call-per-piece method, used only if WASM
+// hasn't initialised yet. Slow (~50ms per square) but correct.
 
 import { Chess } from 'chess.js';
 import engine from './engine';
@@ -25,6 +29,11 @@ import {
   getLegalDestinations,
   makeMove,
 } from './chess';
+import {
+  isReady as wasmReady,
+  pieceContributionsForFen,
+  pieceValueAt,
+} from './analyzer-rs.js';
 
 const HEATMAP_DEPTH = 10;
 
@@ -75,11 +84,41 @@ async function ensureReady() {
 }
 
 export async function getPieceValues(fen) {
+  // Fast path: WASM static eval. ~1ms total for the whole board.
+  if (wasmReady()) {
+    const contributions = pieceContributionsForFen(fen);
+    if (contributions) {
+      const pieces = getPieces(fen);
+      const byKey = new Map(contributions.map(c => [c.square + c.color + c.role, c]));
+      const results = pieces.map(p => {
+        if (p.type === 'k') {
+          return { ...p, delta_cp: 0, delta_pawns: 0 };
+        }
+        const c = byKey.get(p.square + p.color + p.type);
+        const value = c ? clampDelta(c.value_cp) : 0;
+        return {
+          ...p,
+          delta_cp: value,
+          delta_pawns: parseFloat((value / 100).toFixed(2)),
+          breakdown: c ? {
+            material: c.material,
+            psqt: c.psqt,
+            mobility: c.mobility,
+            pawns: c.pawns,
+            king_safety: c.king_safety,
+            threats: c.threats,
+            imbalance: c.imbalance,
+          } : null,
+        };
+      });
+      return { fen, eval_cp: 0, pieces: results }; // eval_cp not used by callers
+    }
+  }
+  // Slow path: legacy engine-call-per-piece. Used only if WASM unavailable.
   await ensureReady();
   const turn = getSideToMove(fen);
   const baseRes = await engine.evaluate(fen, HEATMAP_DEPTH);
   const baseEvalCp = normalizeToWhite(baseRes.cp, turn);
-
   const pieces = getPieces(fen);
   const results = [];
   for (const piece of pieces) {
@@ -87,8 +126,6 @@ export async function getPieceValues(fen) {
     if (piece.type !== 'k') {
       const fenWithoutPiece = removePiece(fen, piece.square);
       const evalRes = await engine.evaluate(fenWithoutPiece, HEATMAP_DEPTH);
-      // Use owner-relative values that fold mate scores into ±1000 so
-      // mate-encoding doesn't blow up the delta.
       const baseOwner = ownerValue(baseRes, turn, piece.color);
       const removedOwner = ownerValue(evalRes, turn, piece.color);
       deltaCp = clampDelta(baseOwner - removedOwner);
@@ -112,10 +149,43 @@ export async function getPieceValues(fen) {
 export function streamDestinationValues(fen, sourceSquare, onResult) {
   let cancelled = false;
   (async () => {
-    await ensureReady();
     const piece = new Chess(fen).get(sourceSquare);
     if (!piece) return;
     const dests = getLegalDestinations(fen, sourceSquare);
+
+    // Fast path: WASM static eval per destination. The piece is on the
+    // destination square in `newFen`, so `pieceValueAt` directly returns
+    // its contribution there. ~50µs per destination — under 1ms total
+    // for any moving piece.
+    if (wasmReady()) {
+      for (const dest of dests) {
+        if (cancelled) break;
+        const newFen = makeMove(fen, sourceSquare, dest);
+        if (!newFen) continue;
+        const c = pieceValueAt(newFen, dest);
+        const valueCp = clampDelta(c ? c.value_cp : 0);
+        onResult({
+          dest,
+          value_cp: valueCp,
+          value_pawns: parseFloat((valueCp / 100).toFixed(2)),
+          breakdown: c ? {
+            material: c.material,
+            psqt: c.psqt,
+            mobility: c.mobility,
+            pawns: c.pawns,
+            king_safety: c.king_safety,
+            threats: c.threats,
+            imbalance: c.imbalance,
+          } : null,
+        });
+        // Yield to the event loop so React can render incrementally.
+        await Promise.resolve();
+      }
+      return;
+    }
+
+    // Slow path: engine-call-per-destination.
+    await ensureReady();
     for (const dest of dests) {
       if (cancelled) break;
       const newFen = makeMove(fen, sourceSquare, dest);
@@ -137,7 +207,7 @@ export function streamDestinationValues(fen, sourceSquare, onResult) {
           value_pawns: parseFloat((valueCp / 100).toFixed(2)),
         });
       } catch {
-        // Skip this destination on failure (e.g. illegal intermediate state)
+        // Skip this destination on failure
       }
     }
   })();

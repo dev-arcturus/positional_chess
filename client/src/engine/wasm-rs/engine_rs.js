@@ -37,6 +37,53 @@ export function analyze_pv(start_fen, ucis, plies) {
 }
 
 /**
+ * Static evaluation of a position. Returns the same `Eval` struct as the
+ * internal evaluator: phase, per-side breakdown, final centipawn score.
+ *
+ * Use this to attribute "why is this position +0.7?" to specific terms
+ * (material, psqt, mobility, pawns, king_safety, threats, imbalance).
+ * @param {string} fen
+ * @returns {any}
+ */
+export function evaluate_fen(fen) {
+    const ptr0 = passStringToWasm0(fen, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.evaluate_fen(ptr0, len0);
+    return takeObject(ret);
+}
+
+/**
+ * Per-piece contribution to the static evaluation. Returns one entry per
+ * non-king piece on the board: `value_cp` (side-relative), plus the
+ * breakdown by head (material / psqt / mobility / pawns / king_safety /
+ * threats / imbalance). This is what the heatmap renders.
+ * @param {string} fen
+ * @returns {any}
+ */
+export function piece_contributions(fen) {
+    const ptr0 = passStringToWasm0(fen, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.piece_contributions(ptr0, len0);
+    return takeObject(ret);
+}
+
+/**
+ * Single-piece contribution at a square. Convenience for hover tooltips
+ * that don't need the full board scan.
+ * @param {string} fen
+ * @param {string} square
+ * @returns {any}
+ */
+export function piece_value_at(fen, square) {
+    const ptr0 = passStringToWasm0(fen, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(square, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.piece_value_at(ptr0, len0, ptr1, len1);
+    return takeObject(ret);
+}
+
+/**
  * Quick smoke-test export so JS can confirm the WASM binding is alive.
  * @returns {string}
  */
@@ -53,7 +100,7 @@ export function version() {
         return getStringFromWasm0(r0, r1);
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
-        wasm.__wbindgen_export3(deferred1_0, deferred1_1, 1);
+        wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
     }
 }
 function __wbg_get_imports() {
@@ -100,6 +147,10 @@ function __wbg_get_imports() {
         __wbg___wbindgen_throw_9c75d47bf9e7731e: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
+        __wbg_fromCodePoint_ac3a66d5b95b4ddf: function() { return handleError(function (arg0) {
+            const ret = String.fromCodePoint(arg0 >>> 0);
+            return addHeapObject(ret);
+        }, arguments); },
         __wbg_instanceof_ArrayBuffer_eab9f28fbec23477: function(arg0) {
             let result;
             try {
@@ -293,6 +344,14 @@ function getUint8ArrayMemory0() {
 }
 
 function getObject(idx) { return heap[idx]; }
+
+function handleError(f, args) {
+    try {
+        return f.apply(this, args);
+    } catch (e) {
+        wasm.__wbindgen_export3(addHeapObject(e));
+    }
+}
 
 let heap = new Array(1024).fill(undefined);
 heap.push(undefined, null, true, false);

@@ -16,7 +16,8 @@
 //! Priority numbers come from a single ordered list at the bottom of
 //! this file. Lower = more important. The composer picks the top 1–2.
 
-use crate::see::{hanging_loss, see, see_capture, least_valuable_attacker};
+use crate::eval::evaluate;
+use crate::see::{hanging_loss, see, see_capture};
 use crate::util::{
     file_letter, in_enemy_half, king_zone, role_name, role_pin_value, role_value, square_is_light,
 };
@@ -738,27 +739,92 @@ fn detect_overloaded(ctx: &Context, out: &mut Vec<Motif>) {
     }
 }
 
+/// Sacrifice / hangs / defended-exchange classification.
+///
+/// First gate: is the moved piece on a losing-SEE square?
+/// (No → say nothing. This covers defended exchanges that net to zero.)
+///
+/// If yes, we need to decide *why*:
+///   - **Sacrifice** = piece is offered with visible compensation.
+///     We measure compensation as the *non-material* eval swing produced
+///     by the move: `Δ(threats + king_safety + pawns + psqt + mobility)`
+///     **for the side that just moved**. If that compensation roughly
+///     covers the material loss (within ~150cp), it's a sacrifice.
+///   - **Hangs** = piece is offered with no compensation. Material drops
+///     and nothing positional improves.
+///   - **Mismatched exchange** (e.g. R takes B with N defending) we also
+///     surface as `hangs` if SEE loss is large enough.
 fn detect_sacrifice_or_hangs(ctx: &Context, out: &mut Vec<Motif>) {
-    let board = ctx.after.board();
-    let loss = hanging_loss(board, ctx.to);
-    if let Some(l) = loss {
-        let mover_val = role_value(ctx.moved.role);
-        let recovered = ctx.captured.map(|p| role_value(p.role)).unwrap_or(0);
-        // A *sacrifice* is when we put a heavier piece in jeopardy than we
-        // captured AND the SEE loss is meaningful (≥200cp net negative).
-        if mover_val - recovered >= 200 && l >= 200 {
-            push(out, "sacrifice", format!("Sacrifices the {}", role_name(ctx.moved.role)));
-            return;
-        }
-        // Otherwise it's just a blunder — piece left undefended. Don't fire
-        // for pawns (those usually have other context).
+    let board_a = ctx.after.board();
+    let see_loss = match hanging_loss(board_a, ctx.to) {
+        Some(l) if l >= 100 => l, // ≥1 pawn worth — anything less is noise
+        _ => return,
+    };
+
+    let mover_val = role_value(ctx.moved.role);
+    let recovered = ctx.captured.map(|p| role_value(p.role)).unwrap_or(0);
+    let material_lost = mover_val - recovered;
+
+    // A *sacrifice* must be a real piece offering — at least minor-value
+    // material going up in flames. Pawn moves to bad squares are usually
+    // "hangs the pawn", not a sacrifice in the literary sense.
+    if material_lost < 200 || ctx.moved.role == Role::Pawn {
         if ctx.moved.role != Role::Pawn {
-            push(
-                out,
-                "hangs",
-                format!("The {} is left undefended", role_name(ctx.moved.role)),
-            );
+            // Non-pawn piece on a losing square with insufficient material
+            // imbalance to call it a sacrifice → it's a blunder.
+            push(out, "hangs", format!("Hangs the {}", role_name(ctx.moved.role)));
         }
+        return;
+    }
+
+    // Compute compensation as the eval swing on the *non-material* heads
+    // for the moving side. PSQT moving piece off bad square + threat
+    // creation + king-attack + pawn structure damage to opponent — all of
+    // these are real compensation Stockfish would price into the score.
+    let eval_b = evaluate(ctx.before.board());
+    let eval_a = evaluate(board_a);
+    let phase = eval_a.phase;
+    let our_a = match ctx.mover {
+        Color::White => eval_a.white,
+        Color::Black => eval_a.black,
+    };
+    let our_b = match ctx.mover {
+        Color::White => eval_b.white,
+        Color::Black => eval_b.black,
+    };
+    let their_a = match ctx.mover {
+        Color::White => eval_a.black,
+        Color::Black => eval_a.white,
+    };
+    let their_b = match ctx.mover {
+        Color::White => eval_b.black,
+        Color::Black => eval_b.white,
+    };
+
+    let our_non_material =
+        (our_a.psqt.taper(phase)        + our_a.mobility.taper(phase)
+       + our_a.threats.taper(phase)     + our_a.king_safety.taper(phase)
+       + our_a.pawns.taper(phase))
+      - (our_b.psqt.taper(phase)        + our_b.mobility.taper(phase)
+       + our_b.threats.taper(phase)     + our_b.king_safety.taper(phase)
+       + our_b.pawns.taper(phase));
+    let their_non_material =
+        (their_a.psqt.taper(phase)      + their_a.mobility.taper(phase)
+       + their_a.threats.taper(phase)   + their_a.king_safety.taper(phase)
+       + their_a.pawns.taper(phase))
+      - (their_b.psqt.taper(phase)      + their_b.mobility.taper(phase)
+       + their_b.threats.taper(phase)   + their_b.king_safety.taper(phase)
+       + their_b.pawns.taper(phase));
+    let compensation = our_non_material - their_non_material;
+
+    // Calibrate: compensation has to come within ~150cp of the SEE loss
+    // for it to count as "sacrificed *for*" something. Tighter than that
+    // and it's a real sacrifice; looser and it's just a blunder.
+    let needed = see_loss - 150;
+    if compensation >= needed {
+        push(out, "sacrifice", format!("Sacrifices the {}", role_name(ctx.moved.role)));
+    } else {
+        push(out, "hangs", format!("Hangs the {}", role_name(ctx.moved.role)));
     }
 }
 
