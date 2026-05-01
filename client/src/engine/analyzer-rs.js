@@ -110,6 +110,9 @@ export function composeTagline(rustResult) {
   if (has('decisive_combination')) return out(rustResult, motifIds, phraseFor('decisive_combination'));
   if (has('smothered_hint'))       return out(rustResult, motifIds, 'Threatens smothered mate');
   if (has('back_rank_mate_threat')) return out(rustResult, motifIds, 'Threatens back-rank mate');
+  if (has('anastasia_mate_threat')) return out(rustResult, motifIds, "Anastasia's mate threat (knight cut-off + rook on the rim)");
+  if (has('bodens_mate_threat'))   return out(rustResult, motifIds, "Boden's mate threat (two bishops crossfire)");
+  if (has('arabian_mate_threat')) return out(rustResult, motifIds, "Arabian-style mate threat (rook + knight on the cornered king)");
   if (has('double_check'))         return out(rustResult, motifIds, 'Double check — only the king can move');
 
   // ── 2. Forced/forcing combos ──────────────────────────────────────
