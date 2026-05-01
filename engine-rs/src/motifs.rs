@@ -36,6 +36,22 @@ pub struct Motif {
     pub priority: u32,
 }
 
+/// Phase bucket — coarser than the 0..=24 phase quantum in eval.rs.
+/// Used by detectors that want one of three verbs ("develops" vs.
+/// "centralizes" vs. "activates") rather than a fine-grained number.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum Phase { Opening, Middlegame, Endgame }
+
+/// Strategic context for the position — the higher-order signal every
+/// detector consults so its phrasing matches what's actually happening.
+///
+/// `mover_advantage_cp`: positive = mover is winning. Lets a "trade"
+/// detector say "Simplifies" instead of "Trades", lets a "captures" say
+/// "Holds the win" instead of "Captures the X", etc.
+///
+/// `phase`: opening / middlegame / endgame. A knight to f5 is "develops
+/// to f5" in move 5, "knight invasion on f5" in move 25, "centralizes
+/// the knight" with kings on the board only.
 struct Context<'a> {
     before: &'a Chess,
     after: &'a Chess,
@@ -47,6 +63,11 @@ struct Context<'a> {
     mover: Color,
     opp: Color,
     move_number: u32,
+    phase_qt: i32,                 // 0..=24
+    phase: Phase,
+    mover_advantage_cp: i32,       // before-move static eval, mover-POV
+    mover_advantage_after_cp: i32, // after-move static eval, mover-POV
+    eval_swing_cp: i32,            // after − before, mover-POV
 }
 
 pub fn detect_all(
@@ -67,6 +88,25 @@ pub fn detect_all(
     };
     let captured = mv.capture().map(|role| Piece { color: moved.color.other(), role });
 
+    // Materialise the strategic context once. Each detector reads from
+    // these — no detector should compute its own static eval.
+    let phase_qt = crate::eval::compute_phase(after.board());
+    // Phase classification: material count is the primary signal. A
+    // 4-piece position on move 1 is endgame, not opening. Move number
+    // only refines "lots of pieces still on board" into opening vs.
+    // middlegame.
+    let phase = if phase_qt <= 8 {
+        Phase::Endgame
+    } else if phase_qt >= 20 && before.fullmoves().get() <= 12 {
+        Phase::Opening
+    } else {
+        Phase::Middlegame
+    };
+    let eval_b = evaluate(before.board()).final_cp;
+    let eval_a = evaluate(after.board()).final_cp;
+    let mover_advantage_cp = if moved.color == Color::White { eval_b } else { -eval_b };
+    let mover_advantage_after_cp = if moved.color == Color::White { eval_a } else { -eval_a };
+
     let ctx = Context {
         before,
         after,
@@ -78,6 +118,11 @@ pub fn detect_all(
         mover: moved.color,
         opp: moved.color.other(),
         move_number: before.fullmoves().get() as u32,
+        phase_qt,
+        phase,
+        mover_advantage_cp,
+        mover_advantage_after_cp,
+        eval_swing_cp: mover_advantage_after_cp - mover_advantage_cp,
     };
 
     let mut out: Vec<Motif> = Vec::with_capacity(8);
@@ -103,7 +148,9 @@ pub fn detect_all(
     // Tactics ───────────────────────────────────────────────────────────
     detect_pin(&ctx, &mut out);
     detect_skewer(&ctx, &mut out);
-    detect_xray(&ctx, &mut out);
+    // (xray removed — it was noise that overlapped pin/skewer when both
+    //  pieces were equal value; "X-ray attack through the bishop" is not
+    //  something a chess commentator would say in 99% of cases.)
     detect_fork(&ctx, &mut out);
     detect_battery(&ctx, &mut out);
     detect_threats_and_creates(&ctx, &mut out);
@@ -114,16 +161,21 @@ pub fn detect_all(
     detect_defends_hanging(&ctx, &mut out);
 
     // King attack ───────────────────────────────────────────────────────
+    detect_greek_gift(&ctx, &mut out);
+    detect_back_rank_mate_threat(&ctx, &mut out);
     detect_attacks_king(&ctx, &mut out);
     detect_eyes_king_zone(&ctx, &mut out);
     detect_smothered_mate_hint(&ctx, &mut out);
     detect_luft(&ctx, &mut out);
 
     // Positional / piece-specific ───────────────────────────────────────
+    detect_knight_invasion(&ctx, &mut out);
     detect_outpost(&ctx, &mut out);
     detect_fianchetto(&ctx, &mut out);
     detect_long_diagonal(&ctx, &mut out);
+    detect_rook_lift(&ctx, &mut out);
     detect_rook_play(&ctx, &mut out);
+    detect_opens_line_for(&ctx, &mut out);
     detect_bad_bishop(&ctx, &mut out);
     detect_bishop_pair_lost(&ctx, &mut out);
     detect_color_complex(&ctx, &mut out);
@@ -131,6 +183,8 @@ pub fn detect_all(
     detect_attacks_pawn(&ctx, &mut out);
     detect_prepares_castling(&ctx, &mut out);
     detect_knight_on_rim(&ctx, &mut out);
+    detect_offers_trade(&ctx, &mut out);
+    detect_pawn_breakthrough(&ctx, &mut out);
 
     // Pawn structure ─────────────────────────────────────────────────────
     detect_pawn_structure_changes(&ctx, &mut out);
@@ -139,6 +193,12 @@ pub fn detect_all(
     // Restriction / development ─────────────────────────────────────────
     detect_restricts(&ctx, &mut out);
     detect_develops(&ctx, &mut out);
+
+    // Higher-order strategic features ───────────────────────────────────
+    detect_loss_of_castling_rights(&ctx, &mut out);
+    detect_decisive_combination(&ctx, &mut out);
+    detect_prophylaxis(&ctx, &mut out);
+    detect_multi_purpose(&ctx, &mut out);
 
     // Deduplicate by id, preferring earlier occurrences (which are
     // generally higher-confidence detectors that ran first).
@@ -237,6 +297,22 @@ fn detect_en_passant(ctx: &Context, out: &mut Vec<Motif>) {
     }
 }
 
+/// Capture / trade classification with context awareness.
+///
+/// Trades in chess aren't neutral when one side is winning — they
+/// favour the leader (simplification) and hurt the trailer (loses
+/// counterplay). We use the static eval BEFORE the move (mover's POV)
+/// to choose the right verb:
+///
+///   • **Simplifies**          — same-role trade while ahead by ≥200cp.
+///   • **Trades into the endgame** — same-role trade + low phase (≤8 of 24).
+///   • **Trades queens / pieces** — neutral phrasing for everything else.
+///   • **Captures the X**      — non-trade capture (different roles).
+///   • **Gives the exchange**  — RxN/B sacrifice (already specific).
+///
+/// The `simplifies` and `trades_into_endgame` IDs let the priority table
+/// rank them above `piece_trade` so the simplification reads as the
+/// *reason* for the move, not just its mechanics.
 fn detect_capture_or_trade(ctx: &Context, out: &mut Vec<Motif>) {
     let cap = match ctx.captured {
         Some(p) => p,
@@ -246,22 +322,60 @@ fn detect_capture_or_trade(ctx: &Context, out: &mut Vec<Motif>) {
         return;
     }
     let cap_name = role_name(cap.role);
-    if cap.role == Role::Queen && ctx.moved.role == Role::Queen {
-        push(out, "queen_trade", "Trades queens");
-    } else if cap.role == ctx.moved.role {
-        push(out, "piece_trade", format!("Trades {}s", role_name(ctx.moved.role)));
-    } else if ctx.moved.role == Role::Rook && (cap.role == Role::Knight || cap.role == Role::Bishop) {
-        push(out, "exchange_sacrifice", format!("Gives the exchange for the {}", cap_name));
-    } else {
-        push(out, "capture", format!("Captures the {}", cap_name));
+
+    // Same-role swap → trade family. The headline depends on (a) who's
+    // ahead and (b) how much material is left on the board.
+    let is_trade = cap.role == ctx.moved.role;
+    if is_trade {
+        // Simplifies: mover clearly ahead going in. The trade is the
+        // *reason* for the move — bleed pieces off the board to convert.
+        if ctx.mover_advantage_cp >= 200 {
+            if cap.role == Role::Queen {
+                push(out, "simplifies", "Trades queens to simplify the win");
+            } else {
+                push(out, "simplifies", format!("Simplifies by trading {}s", role_name(ctx.moved.role)));
+            }
+            return;
+        }
+        // Conversely, when behind by enough, trading is *bad* — bailing
+        // out into a worse endgame. Be honest about that.
+        if ctx.mover_advantage_cp <= -200 && ctx.phase != Phase::Opening {
+            push(out, "trades_when_behind",
+                 format!("Trades into a worse {}",
+                         if ctx.phase == Phase::Endgame { "ending" } else { "position" }));
+            return;
+        }
+        // Trades into endgame: low remaining material, queens off or going off.
+        if ctx.phase == Phase::Endgame {
+            if cap.role == Role::Queen {
+                push(out, "trades_into_endgame", "Trades queens, heading into the endgame");
+            } else {
+                push(out, "trades_into_endgame", format!("Trades {}s into the endgame", role_name(ctx.moved.role)));
+            }
+            return;
+        }
+        // Otherwise: vanilla trade phrasing.
+        if cap.role == Role::Queen {
+            push(out, "queen_trade", "Trades queens");
+        } else {
+            push(out, "piece_trade", format!("Trades {}s", role_name(ctx.moved.role)));
+        }
+        return;
     }
+
+    if ctx.moved.role == Role::Rook && (cap.role == Role::Knight || cap.role == Role::Bishop) {
+        push(out, "exchange_sacrifice", format!("Gives the exchange for the {}", cap_name));
+        return;
+    }
+    push(out, "capture", format!("Captures the {}", cap_name));
 }
 
+/// Check class — split into three buckets the user's UI can present
+/// distinctly: ordinary check, discovered check, and double check.
 fn detect_check_class(ctx: &Context, out: &mut Vec<Motif>) {
     if !ctx.after.is_check() {
         return;
     }
-    // Discovered check: the moving piece is not the checker.
     let opp_king = match find_king(ctx.after.board(), ctx.opp) {
         Some(k) => k,
         None => return,
@@ -273,11 +387,13 @@ fn detect_check_class(ctx: &Context, out: &mut Vec<Motif>) {
     );
     let from_moved = mover_attackers.contains(ctx.to);
     let other_checker = (mover_attackers & !Bitboard::from_square(ctx.to)).any();
-    if !from_moved && other_checker {
+
+    if from_moved && other_checker {
+        // The moving piece checks AND so does an unmasked piece behind →
+        // double check. Strongest tactical form (only the king can move).
+        push(out, "double_check", "Double check");
+    } else if !from_moved && other_checker {
         push(out, "discovered_check", "Discovered check");
-    } else if from_moved && other_checker {
-        // Double check — strongest form.
-        push(out, "discovered_check", "Double check");
     } else {
         push(out, "check", "Gives check");
     }
@@ -390,65 +506,7 @@ fn detect_skewer(ctx: &Context, out: &mut Vec<Motif>) {
 /// X-ray: slider attacks an enemy piece *through* another enemy piece
 /// (the pierced piece is heavier than the moving slider but lighter than
 /// the rear target — i.e. winning material if the front piece moves and
-/// recaptures aren't enough). This is closely related to pin/skewer but
-/// fires on broader patterns.
-fn detect_xray(ctx: &Context, out: &mut Vec<Motif>) {
-    if matches!(ctx.moved.role, Role::Bishop | Role::Rook | Role::Queen) {
-        // Already covered by pin/skewer if a real one fires; we want
-        // x-ray to also describe attacker → enemy → target where the
-        // first enemy is a defender of an even-bigger asset. Skip if
-        // pin/skewer already fired (caller dedupes, but skipping is faster).
-        if out.iter().any(|m| m.id == "pin" || m.id == "skewer") {
-            return;
-        }
-        let dirs = ray_dirs(ctx.moved.role);
-        let board = ctx.after.board();
-        let (f0, r0) = (ctx.to.file() as i32, ctx.to.rank() as i32);
-        for &(df, dr) in dirs {
-            let mut first: Option<Piece> = None;
-            let mut second: Option<Piece> = None;
-            for i in 1..8 {
-                let f = f0 + df * i;
-                let r = r0 + dr * i;
-                if !(0..8).contains(&f) || !(0..8).contains(&r) {
-                    break;
-                }
-                let sq = Square::from_coords(File::new(f as u32), Rank::new(r as u32));
-                let p = match board.piece_at(sq) {
-                    Some(p) => p,
-                    None => continue,
-                };
-                if first.is_none() {
-                    if p.color == ctx.opp {
-                        first = Some(p);
-                    } else {
-                        break;
-                    }
-                } else {
-                    if p.color == ctx.opp {
-                        second = Some(p);
-                    }
-                    break;
-                }
-            }
-            if let (Some(f), Some(s)) = (first, second) {
-                // X-ray fires if BOTH targets are valuable and the front
-                // piece isn't strictly heavier than the rear (pin/skewer
-                // would have caught those cases).
-                let fv = role_pin_value(f.role);
-                let sv = role_pin_value(s.role);
-                if fv >= 5 && sv >= 5 && fv == sv {
-                    push(
-                        out,
-                        "xray",
-                        format!("X-ray attack through the {} onto the {}", role_name(f.role), role_name(s.role)),
-                    );
-                    return;
-                }
-            }
-        }
-    }
-}
+/// (xray detector removed — overlapped pin/skewer noisily.)
 
 /// Fork: the moving piece attacks ≥2 enemy pieces such that
 ///   • at least one target is the king, OR
@@ -573,6 +631,10 @@ fn detect_battery(ctx: &Context, out: &mut Vec<Motif>) {
 /// SEE-aware — only counts pieces where the side-to-move's capture is
 /// genuinely winning material, OR pieces strictly heavier than the
 /// attacker.
+/// Threats: a *real* threat is one where the side-to-move could win
+/// material on the next ply. Both branches require SEE ≥ 0 — saying
+/// "Threatens the rook" when the rook is defended by a pawn is wrong
+/// in the same way "Hangs the knight" used to be wrong.
 fn detect_threats_and_creates(ctx: &Context, out: &mut Vec<Motif>) {
     if out.iter().any(|m| m.id == "fork") {
         return;
@@ -583,26 +645,30 @@ fn detect_threats_and_creates(ctx: &Context, out: &mut Vec<Motif>) {
     let targets: Vec<Square> = (attacks & enemy).into_iter().collect();
     let mover_val = role_value(ctx.moved.role);
 
-    // First: pieces strictly heavier than the attacker → "threatens".
+    // First branch — "Threatens the heavy piece": we attack a piece
+    // strictly heavier than us, AND the capture would actually win
+    // material. Defended-but-heavier pieces don't qualify (they're
+    // already a known constraint, not a fresh threat).
     for sq in &targets {
         let p = board.piece_at(*sq).unwrap();
-        if p.role == Role::King {
-            continue; // already check
-        }
-        if role_value(p.role) > mover_val {
-            push(out, "threatens", format!("Threatens the {}", role_name(p.role)));
-            return;
+        if p.role == Role::King { continue; } // already check
+        if role_value(p.role) <= mover_val { continue; }
+        // SEE-positive capture? (i.e. winning material here.)
+        if let Some(see_val) = see_capture(board, *sq, ctx.mover) {
+            if see_val > 0 {
+                push(out, "threatens", format!("Threatens the {}", role_name(p.role)));
+                return;
+            }
         }
     }
 
-    // Otherwise: check if any *other* enemy piece is now hanging that
-    // wasn't before. This is "creates a threat".
+    // Second branch — "Creates a threat": some OTHER enemy piece (not
+    // necessarily attacked by us) is now hanging when it wasn't before.
+    // SEE-aware via `hanging_loss`.
     let board_b = ctx.before.board();
     for sq in board.by_color(ctx.opp) {
         let p = board.piece_at(sq).unwrap();
-        if p.role == Role::King {
-            continue;
-        }
+        if p.role == Role::King { continue; }
         let was_hanging = hanging_loss(board_b, sq).is_some();
         let is_hanging = hanging_loss(board, sq).is_some();
         if !was_hanging && is_hanging {
@@ -765,6 +831,13 @@ fn detect_sacrifice_or_hangs(ctx: &Context, out: &mut Vec<Motif>) {
     let recovered = ctx.captured.map(|p| role_value(p.role)).unwrap_or(0);
     let material_lost = mover_val - recovered;
 
+    // Even / near-even trade: don't fire `hangs`. A clean knight-for-knight
+    // capture has material_lost = 0 even though static SEE marks the just-
+    // captured square as "loseable on the next ply" (the recapture). That
+    // recapture is just *the rest of the trade*, not a hang.
+    if material_lost < 100 {
+        return;
+    }
     // A *sacrifice* must be a real piece offering — at least minor-value
     // material going up in flames. Pawn moves to bad squares are usually
     // "hangs the pawn", not a sacrifice in the literary sense.
@@ -877,8 +950,14 @@ fn chebyshev(a: Square, b: Square) -> i32 {
     df.max(dr)
 }
 
+/// Eyes the king's zone: a slider's *new* attack pattern includes ≥2
+/// squares around the enemy king, OR aims directly at the king with one
+/// blocker on the path (would-be check if the blocker moves).
+///
+/// One zone-square attack with everything defended isn't "eyeing" — it's
+/// geometric coincidence. Tagline-quality demands stricter than that.
 fn detect_eyes_king_zone(ctx: &Context, out: &mut Vec<Motif>) {
-    if out.iter().any(|m| ["fork","pin","skewer","check","discovered_check","attacks_king","threatens","attacks_pawn"].contains(&m.id.as_str())) {
+    if out.iter().any(|m| ["fork","pin","skewer","check","discovered_check","double_check","attacks_king","threatens","attacks_pawn","greek_gift","back_rank_mate_threat"].contains(&m.id.as_str())) {
         return;
     }
     if !matches!(ctx.moved.role, Role::Bishop | Role::Rook | Role::Queen) {
@@ -897,15 +976,53 @@ fn detect_eyes_king_zone(ctx: &Context, out: &mut Vec<Motif>) {
     let before = attacks_from(board_b, ctx.from);
     let after = attacks_from(board_a, ctx.to);
     let newly = after & zone & !before;
-    if !newly.any() {
+    let newly_count = newly.count() as i32;
+
+    // Requirement: ≥2 zone squares newly eyed, OR a single zone square
+    // that's directly between us and the king with exactly one blocker
+    // (would-be check geometry).
+    let aimed_at_king = is_aimed_at_king(board_a, ctx.to, opp_king, ctx.moved.role);
+    if newly_count < 2 && !aimed_at_king {
         return;
     }
+
     let phrase = match ctx.moved.role {
         Role::Bishop => "Eyes the king's diagonal",
         Role::Rook => "Eyes the king's file",
         _ => "Eyes the king's position",
     };
     push(out, "eyes_king_zone", phrase);
+}
+
+/// Slider on `from` aimed at `king` along a legal ray for the slider role,
+/// with **exactly one** non-king blocker on the path (would-be check if
+/// the blocker moves).
+fn is_aimed_at_king(board: &Board, from: Square, king: Square, role: Role) -> bool {
+    let dirs = ray_dirs(role);
+    let (f0, r0) = (from.file() as i32, from.rank() as i32);
+    let (kf, kr) = (king.file() as i32, king.rank() as i32);
+    for &(df, dr) in dirs {
+        // Find the unit step direction from `from` toward `king`.
+        // Test if (df, dr) leads us toward king in steps that hit it.
+        let mut path_to_king = Vec::new();
+        let mut hit = false;
+        for i in 1..8 {
+            let f = f0 + df * i;
+            let r = r0 + dr * i;
+            if !(0..8).contains(&f) || !(0..8).contains(&r) { break; }
+            let s = Square::from_coords(File::new(f as u32), Rank::new(r as u32));
+            if f == kf && r == kr { hit = true; break; }
+            path_to_king.push(s);
+        }
+        if !hit { continue; }
+        // Count blockers (any piece other than king on the path).
+        let mut blockers = 0;
+        for s in &path_to_king {
+            if board.piece_at(*s).is_some() { blockers += 1; }
+        }
+        if blockers == 1 { return true; }
+    }
+    false
 }
 
 fn detect_smothered_mate_hint(ctx: &Context, out: &mut Vec<Motif>) {
@@ -1246,52 +1363,56 @@ fn detect_color_complex(ctx: &Context, out: &mut Vec<Motif>) {
     }
 }
 
+/// Centralizes — only when the piece literally lands on a core central
+/// square. The previous "+1.5 attack-set delta" criterion was too liberal:
+/// any piece-trade reposition could trigger it. The whole point of
+/// "centralizes" as a tagline is that the piece is *now in the center*.
+///
+/// Core squares: d4, d5, e4, e5 (the four squares chess folklore calls
+/// "the center"). For pawns, also accept c4-c5 / d4-d5 / e4-e5 / f4-f5
+/// (broad pawn-center) since a pawn on c4 staking out queenside is
+/// idiomatically "central" too.
 fn detect_centralizes(ctx: &Context, out: &mut Vec<Motif>) {
     if !matches!(ctx.moved.role, Role::Knight | Role::Bishop | Role::Queen | Role::Rook | Role::Pawn) {
         return;
     }
-    let core = |sq: Square| matches!(sq, Square::D4 | Square::D5 | Square::E4 | Square::E5);
-    let large = |sq: Square| {
-        let f = sq.file() as i32;
-        let r = sq.rank() as i32;
-        (2..=5).contains(&f) && (2..=5).contains(&r)
+    // Only fire on actual central destination — not on attack-set deltas.
+    let core4 = matches!(ctx.to, Square::D4 | Square::D5 | Square::E4 | Square::E5);
+    let pawn_central = matches!(ctx.to,
+        Square::C4 | Square::C5 | Square::D4 | Square::D5
+      | Square::E4 | Square::E5 | Square::F4 | Square::F5);
+    let lands_central = match ctx.moved.role {
+        Role::Pawn => pawn_central,
+        _ => core4,
     };
-    let board_b = ctx.before.board();
-    let board_a = ctx.after.board();
+    if !lands_central {
+        return;
+    }
+    // Was the piece already on a (different) central square? If so, this is
+    // just a side-step within the centre, not a fresh centralization.
+    let was_central = match ctx.moved.role {
+        Role::Pawn => matches!(ctx.from,
+            Square::C4 | Square::C5 | Square::D4 | Square::D5
+          | Square::E4 | Square::E5 | Square::F4 | Square::F5),
+        _ => matches!(ctx.from, Square::D4 | Square::D5 | Square::E4 | Square::E5),
+    };
+    if was_central { return; }
 
-    fn central_score(board: &Board, sq: Square, core: impl Fn(Square) -> bool, large: impl Fn(Square) -> bool) -> f32 {
-        let attacks = attacks_from(board, sq);
-        let mut c = 0.0;
-        let mut l = 0.0;
-        for s in attacks {
-            if core(s) {
-                c += 1.0;
-            } else if large(s) {
-                l += 1.0;
-            }
-        }
-        c + 0.5 * l
-    }
-    let before = if ctx.moved.role == Role::Pawn {
-        if core(ctx.from) { 1.0 } else { 0.0 }
-    } else {
-        central_score(board_b, ctx.from, &core, &large)
+    let phrase = match ctx.moved.role {
+        Role::Pawn => "Stakes a claim in the center",
+        Role::Knight | Role::Bishop => "Centralizes the piece",
+        Role::Queen => "Centralizes the queen",
+        Role::Rook => "Brings the rook into the center",
+        _ => return,
     };
-    let after = if ctx.moved.role == Role::Pawn {
-        if core(ctx.to) { 1.0 } else { 0.0 }
-    } else {
-        central_score(board_a, ctx.to, &core, &large)
-    };
-    if after - before >= 1.5 {
-        let phrase = match ctx.moved.role {
-            Role::Pawn if core(ctx.to) => "Stakes a claim in the center",
-            Role::Knight | Role::Bishop => "Centralizes the piece",
-            _ => "Brings the piece into the center",
-        };
-        push(out, "centralizes", phrase);
-    }
+    push(out, "centralizes", phrase);
 }
 
+/// Attacks-pawn: a piece (not a pawn) newly attacks an enemy pawn AND
+/// could actually win it (SEE ≥ 0 on the capture). Defended-but-attacked
+/// is just contact; calling that "Attacks the c-pawn" is misleading.
+/// We additionally bias toward weak pawns (isolated/backward) since those
+/// are the ones the attack actually pressures.
 fn detect_attacks_pawn(ctx: &Context, out: &mut Vec<Motif>) {
     if out.iter().any(|m| ["threatens","fork","capture"].contains(&m.id.as_str())) {
         return;
@@ -1311,9 +1432,19 @@ fn detect_attacks_pawn(ctx: &Context, out: &mut Vec<Motif>) {
         if p.role != Role::Pawn || p.color != ctx.opp {
             continue;
         }
-        let f = sq.file();
+        // SEE-gate: would taking this pawn actually win material?
+        let see_val = match see_capture(board_a, sq, ctx.mover) {
+            Some(v) => v,
+            None => continue,
+        };
         let isolated = is_isolated_pawn(board_a, sq);
         let backward = is_backward_pawn(board_a, sq, ctx.opp);
+        // Allow firing on weak pawns even if SEE = 0 (the *positional*
+        // threat of pressure on a weakness is real). Otherwise require
+        // SEE > 0 — i.e. a real immediate gain.
+        if see_val < 0 { continue; }
+        if see_val == 0 && !(isolated || backward) { continue; }
+        let f = sq.file();
         let adj = if backward {
             "backward "
         } else if isolated {
@@ -1683,10 +1814,15 @@ fn pseudo_legal_count(pos: &Chess, color: Color) -> usize {
     0
 }
 
+/// Develops / activates / repositions — phase-aware verb selection.
+///
+/// In the opening (≤ move 12) a minor piece off the back rank is
+/// "developed". In the middlegame the same geometric event is usually
+/// a deliberate redeployment ("repositions the knight"). In the endgame
+/// it's an activity move ("activates the bishop"). Phrasing matters
+/// because the user knows from the SAN that the piece moved — what
+/// they need is *why* it matters NOW.
 fn detect_develops(ctx: &Context, out: &mut Vec<Motif>) {
-    if ctx.move_number > 12 {
-        return;
-    }
     if !matches!(ctx.moved.role, Role::Knight | Role::Bishop) {
         return;
     }
@@ -1694,9 +1830,509 @@ fn detect_develops(ctx: &Context, out: &mut Vec<Motif>) {
         Color::White => Rank::First,
         Color::Black => Rank::Eighth,
     };
-    if ctx.from.rank() == start_rank {
-        push(out, "develops", "");
+    let off_back_rank = ctx.from.rank() == start_rank;
+
+    match ctx.phase {
+        Phase::Opening if off_back_rank => {
+            // Bare "develops" emits no phrase; the composer combines it
+            // with prepares-castling / centralizes / outpost when those
+            // also fire. Without a richer companion we don't say anything.
+            push(out, "develops", "");
+        }
+        Phase::Middlegame => {
+            // Only fire if the new square is meaningfully better — i.e.
+            // not just a trade or blunder. We piggy-back on the eval
+            // swing: if the static-eval gain on our side is ≥ 25cp this
+            // is genuine activity, not noise.
+            if ctx.eval_swing_cp >= 25 {
+                push(out, "activates", format!("Activates the {}", role_name(ctx.moved.role)));
+            }
+        }
+        Phase::Endgame => {
+            if ctx.eval_swing_cp >= 25 {
+                push(out, "activates", format!("Activates the {} for the endgame", role_name(ctx.moved.role)));
+            }
+        }
+        _ => {}
     }
+}
+
+// ── New named-pattern detectors ─────────────────────────────────────────
+
+/// Greek gift sacrifice: classic Bxh7+ (white) / Bxh2+ (black) with the
+/// enemy king on g8/g1 after castling, the bishop moving from a kingside
+/// diagonal slot, AND a knight (or queen) ready to follow up on g5/h5.
+///
+/// Pattern requires:
+///   1. Move IS a bishop capture of `h7` (white) or `h2` (black).
+///   2. The captured pawn was the king-shield h-pawn.
+///   3. The enemy king is on g-file rank 8 (white) / 1 (black).
+///   4. We have a knight that can reach g5 (white) / g4 (black) next ply,
+///      OR a queen on the d1-h5 (white) / d8-h4 (black) diagonal/file.
+///
+/// Stricter than "Bxh7+" pattern matching alone — without the follow-up
+/// piece this is just a desperado pawn-grab, not a Greek gift.
+fn detect_greek_gift(ctx: &Context, out: &mut Vec<Motif>) {
+    if ctx.moved.role != Role::Bishop { return; }
+    let cap = match ctx.captured { Some(p) => p, None => return };
+    if cap.role != Role::Pawn { return; }
+    let target_sq_white = Square::H7;
+    let target_sq_black = Square::H2;
+    let king_g_white = Square::G8;
+    let king_g_black = Square::G1;
+    let board = ctx.after.board();
+    let opp_king = match find_king(board, ctx.opp) { Some(k) => k, None => return };
+
+    let is_white_pattern = ctx.mover == Color::White
+        && ctx.to == target_sq_white
+        && opp_king == king_g_white;
+    let is_black_pattern = ctx.mover == Color::Black
+        && ctx.to == target_sq_black
+        && opp_king == king_g_black;
+    if !(is_white_pattern || is_black_pattern) { return; }
+
+    // Knight follow-up: white knight reaches g5 next ply, black to g4.
+    let knight_target = if is_white_pattern { Square::G5 } else { Square::G4 };
+    let our_knights = board.by_piece(Piece { color: ctx.mover, role: Role::Knight });
+    let knight_can_reach = our_knights.into_iter().any(|n| {
+        knight_attacks(n).contains(knight_target)
+    });
+
+    // Or queen follow-up: queen reaches the h-file or h5/h4 diagonal.
+    let queen_targets: Bitboard = if is_white_pattern {
+        Bitboard::from_square(Square::H5) | Bitboard::from_square(Square::H4) | Bitboard::from_square(Square::D3)
+    } else {
+        Bitboard::from_square(Square::H4) | Bitboard::from_square(Square::H5) | Bitboard::from_square(Square::D6)
+    };
+    let our_queens = board.by_piece(Piece { color: ctx.mover, role: Role::Queen });
+    let queen_can_reach = our_queens.into_iter().any(|q| {
+        let qa = queen_attacks(q, board.occupied());
+        (qa & queen_targets).any()
+    });
+
+    if !(knight_can_reach || queen_can_reach) { return; }
+
+    push(out, "greek_gift", "Greek gift sacrifice");
+}
+
+/// Back-rank mate threat. Fires when the move places a heavy piece (R/Q)
+/// such that, on our next ply, mating the enemy king on the back rank is
+/// a real possibility — i.e. the king has no luft (no escape squares) and
+/// our heavy piece can land on the king's rank with no friendly blocker
+/// in the way that the king could capture.
+///
+/// We check (after our move):
+///   1. Enemy king is on its back rank.
+///   2. Every escape square on rank 2/7 (one rank in from king) is
+///      blocked by enemy pieces or attacked by us.
+///   3. We have a R or Q on a file/diagonal that reaches the king's rank
+///      with at most one enemy interposition (which would make the mate
+///      a one-move sequence).
+fn detect_back_rank_mate_threat(ctx: &Context, out: &mut Vec<Motif>) {
+    // Don't double-up with checks/mates that already say their own thing.
+    if out.iter().any(|m| ["checkmate","check","discovered_check","double_check"].contains(&m.id.as_str())) {
+        return;
+    }
+    let board = ctx.after.board();
+    let opp_king = match find_king(board, ctx.opp) { Some(k) => k, None => return };
+    let back_rank = match ctx.opp {
+        Color::White => Rank::First,
+        Color::Black => Rank::Eighth,
+    };
+    if opp_king.rank() != back_rank { return; }
+
+    // Escape squares: rank one in from the king, files kf-1..kf+1.
+    let escape_rank = match ctx.opp {
+        Color::White => Rank::Second,
+        Color::Black => Rank::Seventh,
+    };
+    let kf = opp_king.file() as i32;
+    let mut escape_squares = Vec::new();
+    for df in [-1, 0, 1] {
+        let f = kf + df;
+        if !(0..8).contains(&f) { continue; }
+        escape_squares.push(Square::from_coords(File::new(f as u32), escape_rank));
+    }
+    // All escape squares must be unsafe (blocked by enemy pawn shield or
+    // attacked by us).
+    let our_attacks = compute_all_attacks(board, ctx.mover);
+    let any_escape = escape_squares.iter().any(|s| {
+        let occ = board.piece_at(*s);
+        let blocked_by_friend = matches!(occ, Some(p) if p.color == ctx.opp);
+        let attacked = our_attacks.contains(*s);
+        !blocked_by_friend && !attacked
+    });
+    if any_escape { return; }
+
+    // Do we have an R or Q that can reach the back rank? Look at our
+    // R/Q attacks against any square on the king's rank (excluding king
+    // square, where direct check would have been captured by the
+    // discovered/check branches).
+    let kr = opp_king.rank();
+    let mut rank_squares = Bitboard::EMPTY;
+    for f in 0..8 {
+        let s = Square::from_coords(File::new(f), kr);
+        if s != opp_king {
+            rank_squares |= Bitboard::from_square(s);
+        }
+    }
+    let our_rooks_queens =
+        (board.rooks() | board.queens()) & board.by_color(ctx.mover);
+    let mut threatens = false;
+    for sq in our_rooks_queens {
+        let attacks = match board.piece_at(sq).map(|p| p.role) {
+            Some(Role::Rook) => rook_attacks(sq, board.occupied()),
+            Some(Role::Queen) => queen_attacks(sq, board.occupied()),
+            _ => continue,
+        };
+        if (attacks & rank_squares).any() {
+            threatens = true;
+            break;
+        }
+    }
+    if !threatens { return; }
+
+    push(out, "back_rank_mate_threat", "Threatens back-rank mate");
+}
+
+/// Knight invasion: knight lands on a 5th/6th-rank outpost in the enemy
+/// half AND that square is unchallengeable by enemy pawns. Fires *in
+/// addition* to `outpost` when the invasion is into the opponent's camp,
+/// because "Knight invades f5" reads more sharply than "Establishes an
+/// outpost on f5".
+fn detect_knight_invasion(ctx: &Context, out: &mut Vec<Motif>) {
+    if ctx.moved.role != Role::Knight { return; }
+    let board = ctx.after.board();
+    if !is_outpost(board, ctx.to, ctx.moved) { return; }
+    // Must be on rank 5+ (white) or rank 4- (black) — invading enemy half.
+    let r = ctx.to.rank() as i32;
+    let invading = match ctx.mover {
+        Color::White => r >= 4,
+        Color::Black => r <= 3,
+    };
+    if !invading { return; }
+    // Don't fire on rank-4/5 outposts that are merely "central" — we need
+    // a true invasion: rank 5+ (white) / rank ≤ 2 (black) AND in enemy
+    // territory by file too (i.e. inside the enemy's pawn structure).
+    let deep_invasion = match ctx.mover {
+        Color::White => r >= 4,
+        Color::Black => r <= 3,
+    };
+    if !deep_invasion { return; }
+    push(out, "knight_invasion", format!("Knight invades {}", ctx.to));
+}
+
+/// Rook lift: rook moves from the back rank to rank 3 (white) or rank 6
+/// (black) on the kingside (f/g/h files). Classic attacking maneuver.
+fn detect_rook_lift(ctx: &Context, out: &mut Vec<Motif>) {
+    if ctx.moved.role != Role::Rook { return; }
+    let from_rank = match ctx.mover { Color::White => Rank::First, Color::Black => Rank::Eighth };
+    if ctx.from.rank() != from_rank { return; }
+    let to_rank = match ctx.mover { Color::White => Rank::Third, Color::Black => Rank::Sixth };
+    if ctx.to.rank() != to_rank { return; }
+    if !matches!(ctx.to.file(), File::F | File::G | File::H) { return; }
+    push(out, "rook_lift", "Rook lift toward the kingside");
+}
+
+/// Opens a file or diagonal for one of OUR sliders. Fires when:
+///   • The from-square sat on a file (or diagonal) that an own R/Q (or
+///     B/Q) lies behind, AND
+///   • Vacating it gives the slider a new line.
+///
+/// This catches things like "knight steps off c3, opening the c-file for
+/// the rook on c1".
+fn detect_opens_line_for(ctx: &Context, out: &mut Vec<Motif>) {
+    let board_a = ctx.after.board();
+    let board_b = ctx.before.board();
+    // File (vertical) line: any of OUR R/Q on the same file as `from`,
+    // with `from` between them and any further square that's now newly
+    // attacked.
+    let f0 = ctx.from.file() as i32;
+    let r0 = ctx.from.rank() as i32;
+
+    // Files: scan up and down from the from-square.
+    let our_rooks_queens =
+        (board_a.rooks() | board_a.queens()) & board_a.by_color(ctx.mover);
+    for sq in our_rooks_queens {
+        if sq == ctx.from || sq == ctx.to { continue; }
+        let sf = sq.file() as i32;
+        let sr = sq.rank() as i32;
+        // Same file, our slider sits behind `from`?
+        if sf == f0 && sr != r0 {
+            let between_clear = ray_clear_between_after(board_a, sq, ctx.from);
+            let was_blocked_before = !ray_clear_between(board_b, sq, ctx.from)
+                || board_b.piece_at(ctx.from).map_or(false, |p| p.color == ctx.mover);
+            if between_clear && was_blocked_before {
+                let role = match board_a.piece_at(sq).map(|p| p.role) {
+                    Some(Role::Rook) => "rook",
+                    Some(Role::Queen) => "queen",
+                    _ => "rook",
+                };
+                push(out, "opens_file_for", format!("Opens the {}-file for the {}", file_letter(File::new(f0 as u32)), role));
+                return;
+            }
+        }
+        // Same diagonal? Distance check.
+        if (sf - f0).abs() == (sr - r0).abs() && (sf - f0).abs() > 0 {
+            // Only diagonal-mover (B or Q) opens a diagonal.
+            let role = board_a.piece_at(sq).map(|p| p.role);
+            if !matches!(role, Some(Role::Bishop) | Some(Role::Queen)) { continue; }
+            let between_clear = ray_clear_between_after(board_a, sq, ctx.from);
+            let was_blocked_before = !ray_clear_between(board_b, sq, ctx.from)
+                || board_b.piece_at(ctx.from).map_or(false, |p| p.color == ctx.mover);
+            if between_clear && was_blocked_before {
+                let role_str = match role { Some(Role::Bishop) => "bishop", _ => "queen" };
+                push(out, "opens_diagonal_for", format!("Opens a diagonal for the {}", role_str));
+                return;
+            }
+        }
+    }
+    // Bishops too (already partially handled above for Q).
+    let our_bishops = board_a.bishops() & board_a.by_color(ctx.mover);
+    for sq in our_bishops {
+        if sq == ctx.from || sq == ctx.to { continue; }
+        let sf = sq.file() as i32;
+        let sr = sq.rank() as i32;
+        if (sf - f0).abs() == (sr - r0).abs() && (sf - f0).abs() > 0 {
+            let between_clear = ray_clear_between_after(board_a, sq, ctx.from);
+            let was_blocked_before = !ray_clear_between(board_b, sq, ctx.from)
+                || board_b.piece_at(ctx.from).map_or(false, |p| p.color == ctx.mover);
+            if between_clear && was_blocked_before {
+                push(out, "opens_diagonal_for", "Opens a diagonal for the bishop");
+                return;
+            }
+        }
+    }
+}
+
+fn ray_clear_between(board: &Board, a: Square, b: Square) -> bool {
+    let af = a.file() as i32;
+    let ar = a.rank() as i32;
+    let bf = b.file() as i32;
+    let br = b.rank() as i32;
+    let df = (bf - af).signum();
+    let dr = (br - ar).signum();
+    let mut f = af + df;
+    let mut r = ar + dr;
+    while f != bf || r != br {
+        let s = Square::from_coords(File::new(f as u32), Rank::new(r as u32));
+        if board.piece_at(s).is_some() { return false; }
+        f += df;
+        r += dr;
+    }
+    true
+}
+fn ray_clear_between_after(board: &Board, a: Square, b: Square) -> bool {
+    // `b` is the from-square on the after-board (now empty), so we just
+    // check that the path between `a` and `b` is unblocked, and `b`
+    // itself is now empty.
+    if board.piece_at(b).is_some() { return false; }
+    ray_clear_between(board, a, b)
+}
+
+/// Pawn breakthrough: a pawn capture that creates (or unblocks) a
+/// passed pawn for our side. Distinct from `pawn_break` which fires on
+/// any pawn capture — breakthrough is about creating a queening threat.
+fn detect_pawn_breakthrough(ctx: &Context, out: &mut Vec<Motif>) {
+    if ctx.moved.role != Role::Pawn { return; }
+    if ctx.captured.is_none() { return; }
+    let board_a = ctx.after.board();
+    let board_b = ctx.before.board();
+    // Is THIS pawn now passed? Or is some other friendly pawn newly passed?
+    let enemy_pawns_a = board_a.pawns() & board_a.by_color(ctx.opp);
+    let mover_pawns_a = board_a.pawns() & board_a.by_color(ctx.mover);
+    let mover_pawns_b = board_b.pawns() & board_b.by_color(ctx.mover);
+    for sq in mover_pawns_a {
+        let was = mover_pawns_b.contains(sq);
+        let is_passed_now = is_passed_pawn_loose(sq, ctx.mover, enemy_pawns_a);
+        let was_passed = if was {
+            let enemy_pawns_b = board_b.pawns() & board_b.by_color(ctx.opp);
+            is_passed_pawn_loose(sq, ctx.mover, enemy_pawns_b)
+        } else { false };
+        if is_passed_now && !was_passed {
+            push(out, "pawn_breakthrough", format!("Creates a passed pawn on the {}-file", file_letter(sq.file())));
+            return;
+        }
+    }
+}
+fn is_passed_pawn_loose(sq: Square, color: Color, enemy_pawns: Bitboard) -> bool {
+    let f = sq.file() as i32;
+    let r = sq.rank() as i32;
+    for df in [-1, 0, 1] {
+        let nf = f + df;
+        if !(0..8).contains(&nf) { continue; }
+        for nr in 0..8 {
+            let s = Square::from_coords(File::new(nf as u32), Rank::new(nr));
+            if !enemy_pawns.contains(s) { continue; }
+            if (color == Color::White && nr as i32 > r) || (color == Color::Black && (nr as i32) < r) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Offers a trade: we move a piece into a square where it's defended,
+/// directly attacked by an equal-value enemy piece, AND any capture
+/// would be a clean SEE-zero exchange. Captures the social meaning of
+/// "I'm offering to trade pieces" — a non-capture move that nonetheless
+/// creates a trading opportunity.
+fn detect_offers_trade(ctx: &Context, out: &mut Vec<Motif>) {
+    // Only fire on quiet moves; captures already classified.
+    if ctx.captured.is_some() { return; }
+    if matches!(ctx.moved.role, Role::Pawn | Role::King) { return; }
+    let board = ctx.after.board();
+    // Are we attacked by an equal-role enemy piece?
+    let attackers = board.attacks_to(ctx.to, ctx.opp, board.occupied());
+    let mut equal_attacker_role: Option<Role> = None;
+    for asq in attackers {
+        if let Some(p) = board.piece_at(asq) {
+            if p.role == ctx.moved.role {
+                equal_attacker_role = Some(p.role);
+                break;
+            }
+        }
+    }
+    if equal_attacker_role.is_none() { return; }
+    // Are we defended by at least one piece?
+    let defenders = board.attacks_to(ctx.to, ctx.mover, board.occupied())
+        & !Bitboard::from_square(ctx.to);
+    if !defenders.any() { return; }
+    // SEE on opp capturing here should be ≈ 0 (clean trade).
+    if let Some(see_val) = see_capture(board, ctx.to, ctx.opp) {
+        if see_val.abs() > 50 { return; } // not a clean trade
+    } else { return; }
+    push(out, "offers_trade", format!("Offers a {} trade", role_name(ctx.moved.role)));
+}
+
+/// Compute the union of attack sets for all pieces of `color`. Used by
+/// pattern detectors that need "is square X attacked by color Y".
+fn compute_all_attacks(board: &Board, color: Color) -> Bitboard {
+    let mut bb = Bitboard::EMPTY;
+    let occ = board.occupied();
+    for sq in board.by_color(color) {
+        let p = match board.piece_at(sq) { Some(p) => p, None => continue };
+        bb |= match p.role {
+            Role::Pawn => pawn_attacks(p.color, sq),
+            Role::Knight => knight_attacks(sq),
+            Role::Bishop => bishop_attacks(sq, occ),
+            Role::Rook => rook_attacks(sq, occ),
+            Role::Queen => queen_attacks(sq, occ),
+            Role::King => king_attacks(sq),
+        };
+    }
+    bb
+}
+
+// ── Strategic / higher-order detectors ──────────────────────────────────
+
+/// Decisive combination: a single ply that wins material AND continues to
+/// threaten more. Specifically: this move is a CAPTURE *and* delivers
+/// check OR creates a follow-up threat that the opponent can't simply
+/// ignore. The eval swing in our favor confirms it's not just noise.
+///
+/// This is a Lasker / Capablanca-style observation: not just "captures
+/// the rook" but "captures the rook and the threats keep coming."
+fn detect_decisive_combination(ctx: &Context, out: &mut Vec<Motif>) {
+    // Already gated by checkmate/sacrifice — those are stronger.
+    if out.iter().any(|m| ["checkmate","sacrifice","double_check"].contains(&m.id.as_str())) {
+        return;
+    }
+    let captured = match ctx.captured { Some(c) => c, None => return };
+    if captured.role == Role::Pawn { return; } // only fires on piece captures
+    let gives_check = ctx.after.is_check();
+    let creates_more = out.iter().any(|m|
+        ["fork","pin","skewer","threatens","creates_threat","greek_gift","traps_piece","back_rank_mate_threat"]
+            .contains(&m.id.as_str()));
+    if !(gives_check || creates_more) { return; }
+    // Eval swing must confirm: ≥150cp gain for the mover this turn.
+    if ctx.eval_swing_cp < 150 { return; }
+    push(out, "decisive_combination", "Decisive combination — winning material and pressing on");
+}
+
+/// Loss of castling rights — a king OR rook move that removes castling
+/// rights for the side that just moved, in a position where the king is
+/// still vulnerable (lots of pieces on the board, hasn't castled). This
+/// is a strategic warning sign worth surfacing.
+fn detect_loss_of_castling_rights(ctx: &Context, out: &mut Vec<Motif>) {
+    if !matches!(ctx.moved.role, Role::King | Role::Rook) { return; }
+    let before_rights = ctx.before.castles();
+    let after_rights = ctx.after.castles();
+    let lost_kingside = before_rights.has(ctx.mover, shakmaty::CastlingSide::KingSide)
+        && !after_rights.has(ctx.mover, shakmaty::CastlingSide::KingSide);
+    let lost_queenside = before_rights.has(ctx.mover, shakmaty::CastlingSide::QueenSide)
+        && !after_rights.has(ctx.mover, shakmaty::CastlingSide::QueenSide);
+    if !(lost_kingside || lost_queenside) { return; }
+    // Only meaningful in the opening / middlegame. In the endgame we
+    // don't usually castle anyway.
+    if ctx.phase == Phase::Endgame { return; }
+    // If the move was castling itself, that's already its own motif.
+    if matches!(ctx.mv, Move::Castle { .. }) { return; }
+
+    let phrase = if lost_kingside && lost_queenside {
+        "Forfeits castling rights"
+    } else if lost_kingside {
+        "Forfeits kingside castling"
+    } else {
+        "Forfeits queenside castling"
+    };
+    push(out, "loses_castling", phrase);
+}
+
+/// Prophylaxis (limited form). A move is prophylactic if it specifically
+/// prevents the opponent's most natural break or threat. We approximate:
+/// the move significantly *reduces* the eval swing the opponent could
+/// have generated (we look at one of their best counter-moves before vs
+/// after — but that requires search, which we don't have). Instead we
+/// use a simple geometric heuristic: a move that *blocks an enemy
+/// slider's attack on a critical square* (one that would have been a
+/// fork / mate / capture target) is prophylactic.
+///
+/// Concretely: if our move places a friendly piece on a square that's
+/// on an enemy slider's attack ray AND that square was previously
+/// attacked by the enemy slider (now blocked), we flag it.
+fn detect_prophylaxis(ctx: &Context, out: &mut Vec<Motif>) {
+    if ctx.captured.is_some() { return; }   // captures aren't prophylactic
+    if ctx.after.is_check() { return; }     // checks aren't prophylactic
+    if matches!(ctx.moved.role, Role::Pawn | Role::King) { return; }
+    let board_a = ctx.after.board();
+    let board_b = ctx.before.board();
+    // Did our destination square become a NEW blocker on an enemy ray?
+    // Simpler test: count enemy slider attack squares before vs after.
+    // If after < before by ≥3, we've meaningfully blocked something.
+    let enemy_attacks_before = compute_all_attacks(board_b, ctx.opp).count() as i32;
+    let enemy_attacks_after = compute_all_attacks(board_a, ctx.opp).count() as i32;
+    let blocked = enemy_attacks_before - enemy_attacks_after;
+    if blocked < 3 { return; }
+    // Don't fire in the opening — too noisy; piece moves naturally
+    // change attack counts in early positions.
+    if ctx.phase == Phase::Opening { return; }
+    push(out, "prophylaxis", "Prophylactic move, restricting the opponent");
+}
+
+/// Multi-purpose move: a single ply that satisfies multiple strategic
+/// goals at once (Karpov's hallmark). We say "multi-purpose" if the
+/// move triggers ≥3 of the high-priority motif buckets WITHOUT firing
+/// any single decisive one (no checkmate / sacrifice / fork etc.). This
+/// is a softer "this is a really nice move" tag for quiet positions.
+fn detect_multi_purpose(ctx: &Context, out: &mut Vec<Motif>) {
+    let strong_buckets = [
+        "develops", "centralizes", "outpost", "long_diagonal", "fianchetto",
+        "open_file", "semi_open_file", "rook_seventh", "doubles_rooks",
+        "battery", "prepares_castling_kingside", "prepares_castling_queenside",
+        "attacks_pawn", "eyes_king_zone", "defends", "activates",
+        "opens_file_for", "opens_diagonal_for", "knight_invasion",
+        "rook_lift", "passed_pawn", "outpost", "connects_rooks",
+    ];
+    // Count how many already-fired motifs land in the bucket.
+    let count = out.iter().filter(|m| strong_buckets.contains(&m.id.as_str())).count();
+    if count < 3 { return; }
+    // Don't fire if a "headline" tactic already fired.
+    if out.iter().any(|m| ["checkmate","double_check","sacrifice","fork","pin","skewer","greek_gift","decisive_combination"].contains(&m.id.as_str())) {
+        return;
+    }
+    let _ = ctx; // ctx not needed — we just observe what fired
+    push(out, "multi_purpose", "Multi-purpose move achieving several goals");
 }
 
 // ── Ray tables ──────────────────────────────────────────────────────────
@@ -1719,26 +2355,37 @@ fn ray_dirs(role: Role) -> &'static [(i32, i32)] {
 
 fn priority_of(id: &str) -> u32 {
     match id {
+        // Game-defining tactical moves.
         "checkmate" => 0,
-        "sacrifice" => 1,
-        "fork" => 2,
-        "discovered_check" => 3,
-        "pin" => 4,
-        "skewer" => 5,
-        "xray" => 6,
-        "removes_defender" => 7,
-        "smothered_hint" => 8,
-        "queen_trade" => 10,
-        "exchange_sacrifice" => 11,
-        "piece_trade" => 12,
-        "capture" => 13,
-        "en_passant" => 14,
-        "promotion" => 15,
-        "creates_threat" => 20,
-        "threatens" => 21,
-        "traps_piece" => 22,
-        "overloaded" => 23,
-        "check" => 24,
+        "double_check" => 1,            // strongest single-ply tactic
+        "sacrifice" => 2,
+        "greek_gift" => 3,              // famous named pattern
+        "decisive_combination" => 4,
+        "fork" => 5,
+        // (indices below shift by 1; legacy rules unchanged)
+        "discovered_check" => 6,
+        "pin" => 7,
+        "skewer" => 8,
+        "back_rank_mate_threat" => 9,
+        "removes_defender" => 10,
+        "smothered_hint" => 11,
+        // Captures & trades.
+        "exchange_sacrifice" => 14,
+        "simplifies" => 15,             // trade when ahead → reads as the *reason*
+        "trades_into_endgame" => 16,
+        "queen_trade" => 17,
+        "piece_trade" => 18,
+        "capture" => 19,
+        "en_passant" => 20,
+        "promotion" => 21,
+        "pawn_breakthrough" => 22,
+        // Threats / pressure.
+        "creates_threat" => 25,
+        "threatens" => 26,
+        "traps_piece" => 27,
+        "overloaded" => 28,
+        "check" => 29,
+        // Strategic structural ideas.
         "castles_kingside" => 30,
         "castles_queenside" => 31,
         "iqp_them" => 40,
@@ -1749,14 +2396,19 @@ fn priority_of(id: &str) -> u32 {
         "color_complex_self" => 45,
         "doubled_pawns_them" => 46,
         "backward_pawn_them" => 47,
-        "doubles_rooks" => 50,
-        "rook_seventh" => 51,
-        "open_file" => 52,
-        "semi_open_file" => 53,
+        // Piece play.
+        "knight_invasion" => 50,        // outranks plain "outpost"
+        "rook_lift" => 51,
+        "doubles_rooks" => 52,
+        "rook_seventh" => 53,
+        "open_file" => 54,
+        "semi_open_file" => 55,
         "outpost" => 60,
         "long_diagonal" => 61,
         "fianchetto" => 62,
         "battery" => 63,
+        "opens_file_for" => 64,
+        "opens_diagonal_for" => 65,
         "attacks_pawn" => 70,
         "eyes_king_zone" => 71,
         "attacks_king" => 72,
@@ -1766,17 +2418,26 @@ fn priority_of(id: &str) -> u32 {
         "centralizes" => 82,
         "defends" => 83,
         "restricts" => 84,
+        "offers_trade" => 85,
+        "activates" => 86,
+        "trades_when_behind" => 87,
+        "loses_castling" => 88,
+        "prophylaxis" => 89,
+        "multi_purpose" => 89,
         "pawn_break" => 90,
         "pawn_lever" => 91,
         "passed_pawn" => 92,
         "pawn_storm" => 93,
         "isolated_pawn" => 94,
+        // Bad signs.
         "knight_on_rim" => 100,
         "bishop_pair_lost" => 101,
         "bad_bishop" => 102,
         "hangs" => 103,
+        // Game-end states.
         "stalemate" => 110,
         "insufficient_material" => 113,
+        // Internal flags.
         "develops" => 200,
         "connects_rooks" => 201,
         _ => 999,

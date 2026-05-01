@@ -71,9 +71,19 @@ export function analyzePv(startFen, ucis, plies = 3) {
   }
 }
 
-// Compose a tagline from a Rust analysis result. Mirrors the JS taglines
-// composer (`combinedPhrase`, two-motif join) but operates on the
-// pre-rendered Rust phrases.
+// Compose a tagline from a Rust analysis result.
+//
+// Strategy (in order):
+//   1. **Named patterns** that subsume other motifs. If `greek_gift`
+//      fires, that's the headline — drop the bare `sacrifice`+`check`
+//      mechanics underneath. Same for `decisive_combination`,
+//      `back_rank_mate_threat`, `smothered_hint`.
+//   2. **Combos** that read more naturally as one phrase:
+//      `Captures the X with check`, `Forks knight and rook with check`,
+//      etc.
+//   3. **Pair join** for two complementary motifs.
+//   4. **Single phrase** for the highest-priority motif.
+//   5. **Empty** when nothing meaningful fired (better silence than filler).
 export function composeTagline(rustResult) {
   if (!rustResult || !rustResult.motifs) {
     return { san: rustResult?.san || '', motifs: [], tagline: '', fenAfter: rustResult?.fen_after || '' };
@@ -81,48 +91,107 @@ export function composeTagline(rustResult) {
 
   const motifs = rustResult.motifs.slice().sort((a, b) => a.priority - b.priority);
   const motifIds = motifs.map(m => m.id);
+  const has = (id) => motifIds.includes(id);
   const phraseFor = (id) => {
     const m = motifs.find(x => x.id === id);
     return m && m.phrase ? m.phrase : null;
   };
 
-  // Special combinations that read more naturally.
-  let combo = null;
-  const has = (id) => motifIds.includes(id);
+  // ── 1. Named patterns subsume their components ────────────────────
+  // These are the headline events — when one fires, supporting motifs
+  // become redundant. (E.g., `greek_gift` already implies sacrifice +
+  // check + king attack — saying any of them again is noise.)
+  if (has('checkmate'))            return out(rustResult, motifIds, 'Delivers checkmate');
+  if (has('greek_gift')) {
+    return out(rustResult, motifIds,
+      has('check') ? 'Greek gift sacrifice — Bxh7+!' : 'Greek gift sacrifice');
+  }
+  if (has('decisive_combination')) return out(rustResult, motifIds, phraseFor('decisive_combination'));
+  if (has('smothered_hint'))       return out(rustResult, motifIds, 'Threatens smothered mate');
+  if (has('back_rank_mate_threat')) return out(rustResult, motifIds, 'Threatens back-rank mate');
+  if (has('double_check'))         return out(rustResult, motifIds, 'Double check — only the king can move');
+
+  // ── 2. Forced/forcing combos ──────────────────────────────────────
+  // Captures with check, fork with check, etc. read better as one line.
+  if (has('fork') && has('check')) {
+    return out(rustResult, motifIds, `${phraseFor('fork')} with check`);
+  }
+  if (has('fork') && has('discovered_check')) {
+    return out(rustResult, motifIds, `${phraseFor('fork')} with discovered check`);
+  }
+  if (has('capture') && has('discovered_check')) {
+    return out(rustResult, motifIds, `${phraseFor('capture')} with discovered check`);
+  }
+  if (has('capture') && has('check')) {
+    return out(rustResult, motifIds, `${phraseFor('capture')} with check`);
+  }
+  if (has('removes_defender') && has('threatens')) {
+    return out(rustResult, motifIds,
+      `${phraseFor('removes_defender')}, leaving it undefended`);
+  }
   if (has('castles_kingside') && has('connects_rooks')) {
-    combo = 'Castles kingside, connecting the rooks';
-  } else if (has('castles_queenside') && has('connects_rooks')) {
-    combo = 'Castles queenside, connecting the rooks';
-  } else if (has('capture') && has('discovered_check')) {
-    combo = `${phraseFor('capture')} with discovered check`;
-  } else if (has('capture') && has('check')) {
-    combo = `${phraseFor('capture')} with check`;
-  } else if (has('outpost') && has('attacks_pawn')) {
-    combo = `${phraseFor('outpost')}, ${phraseFor('attacks_pawn').toLowerCase()}`;
-  } else if (has('removes_defender') && has('threatens')) {
-    combo = `${phraseFor('removes_defender')}, leaving it hanging`;
-  } else if (has('fork') && has('check')) {
-    combo = `${phraseFor('fork')} with check`;
+    return out(rustResult, motifIds, 'Castles kingside, connecting the rooks');
+  }
+  if (has('castles_queenside') && has('connects_rooks')) {
+    return out(rustResult, motifIds, 'Castles queenside, connecting the rooks');
+  }
+  if (has('outpost') && has('attacks_pawn')) {
+    return out(rustResult, motifIds,
+      `${phraseFor('outpost')}, ${phraseFor('attacks_pawn').toLowerCase()}`);
+  }
+  if (has('knight_invasion') && has('attacks_pawn')) {
+    return out(rustResult, motifIds,
+      `${phraseFor('knight_invasion')} and ${phraseFor('attacks_pawn').toLowerCase()}`);
+  }
+  if (has('pin') && has('threatens')) {
+    return out(rustResult, motifIds,
+      `${phraseFor('pin')}, threatening to win it`);
+  }
+  if (has('rook_lift') && has('eyes_king_zone')) {
+    return out(rustResult, motifIds,
+      `${phraseFor('rook_lift')} — joining the king attack`);
+  }
+  if (has('opens_file_for') && has('battery')) {
+    return out(rustResult, motifIds, phraseFor('battery'));
+  }
+  if (has('simplifies') && has('check')) {
+    return out(rustResult, motifIds,
+      `${phraseFor('simplifies')} with check`);
+  }
+  if (has('promotion') && has('check')) {
+    return out(rustResult, motifIds,
+      `${phraseFor('promotion')} with check`);
+  }
+  if (has('promotion') && has('checkmate')) {
+    return out(rustResult, motifIds,
+      `${phraseFor('promotion')} — mate`);
   }
 
-  // Drop empty / utility-only motifs (develops, connects_rooks) from final phrase.
+  // ── 3. Drop empty / utility-only motifs ───────────────────────────
   const visible = motifs.filter(m => m.phrase && m.phrase.length > 0);
 
+  // ── 4. Single or pair fallback ────────────────────────────────────
   let tagline;
-  if (combo) {
-    tagline = combo;
-  } else if (visible.length === 0) {
+  if (visible.length === 0) {
     tagline = '';
   } else if (visible.length === 1) {
     tagline = visible[0].phrase;
   } else {
-    tagline = visible.slice(0, 2).map(m => m.phrase).join(', ');
+    // Pair: top 2 highest-priority phrases. Lowercase the second so it
+    // reads more naturally ("Pins the knight, threatens the rook").
+    const a = visible[0].phrase;
+    const b = visible[1].phrase;
+    tagline = `${a}, ${b.charAt(0).toLowerCase()}${b.slice(1)}`;
   }
 
+  return out(rustResult, motifIds, tagline);
+}
+
+function out(rustResult, motifIds, tagline) {
   return {
     san: rustResult.san,
     motifs: motifIds,
-    tagline,
+    tagline: tagline || '',
     fenAfter: rustResult.fen_after,
   };
 }

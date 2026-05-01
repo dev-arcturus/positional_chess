@@ -34,6 +34,19 @@ mod util;
 
 use motifs::{detect_all, Motif};
 
+// Re-export the analyzer entry-point for native (non-WASM) callers — the
+// Rust integration test suite uses this to avoid going through the
+// wasm-bindgen boundary.
+pub use motifs::Motif as PublicMotif;
+pub fn detect_for_test(
+    before: &Chess,
+    after: &Chess,
+    mv: &shakmaty::Move,
+    terminal: Option<&'static str>,
+) -> Vec<Motif> {
+    detect_all(before, after, mv, terminal)
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /// Result of analyzing a single move.
