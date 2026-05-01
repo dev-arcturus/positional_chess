@@ -973,14 +973,14 @@ export default function Board() {
       {/* Main 2-column grid: eval bar + board on the left, analysis on the right. */}
       <div style={{
         display: 'flex',
-        gap: '12px',
+        gap: '14px',
         alignItems: 'flex-start',
         width: '100%',
-        maxWidth: '1040px',
+        maxWidth: '1080px',
       }}>
         {/* LEFT: eval bar flush with the board */}
-        <div style={{ display: 'flex', alignItems: 'stretch' }}>
-          <div style={{ width: '24px', height: '600px' }}>
+        <div style={{ display: 'flex', alignItems: 'stretch', gap: '4px' }}>
+          <div style={{ width: '36px', height: '600px' }}>
             <EvalBar evalCp={evalCp} mate={evalMate} result={gameResult} loading={topMovesLoading} />
           </div>
           <div style={{
@@ -1100,75 +1100,74 @@ export default function Board() {
         </div>
 
         {/* RIGHT: analysis column */}
-        <div style={{
-          width: '380px',
+        <div className="analysis-panel thin-scroll" style={{
+          width: '400px',
           height: '600px',
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: '#18181b',
           border: '1px solid #27272a',
-          borderRadius: '3px',
+          borderRadius: '6px',
           overflow: 'hidden',
         }}>
           {/* Toolbar buttons */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
-            padding: '8px',
+            gap: '6px',
+            padding: '8px 10px',
             borderBottom: '1px solid #27272a',
           }}>
-            <button onClick={goBack} disabled={historyIndex === 0} title="Previous (← / ↑)" style={{
+            <button onClick={goBack} disabled={historyIndex === 0} title="Previous move (← / ↑)" className="icon-btn" style={{
               padding: '7px',
-              borderRadius: '2px',
-              backgroundColor: '#27272a',
-              color: historyIndex === 0 ? '#52525b' : '#a1a1aa',
-              border: 'none',
+              borderRadius: '6px',
+              backgroundColor: '#1f1f23',
+              color: historyIndex === 0 ? '#3f3f46' : '#a1a1aa',
+              border: '1px solid #27272a',
               cursor: historyIndex === 0 ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <ChevronLeft size={14} />
             </button>
-            <button onClick={goForward} disabled={historyIndex >= moveHistory.length - 1} title="Next (→ / ↓)" style={{
+            <button onClick={goForward} disabled={historyIndex >= moveHistory.length - 1} title="Next move (→ / ↓)" className="icon-btn" style={{
               padding: '7px',
-              borderRadius: '2px',
-              backgroundColor: '#27272a',
-              color: historyIndex >= moveHistory.length - 1 ? '#52525b' : '#a1a1aa',
-              border: 'none',
+              borderRadius: '6px',
+              backgroundColor: '#1f1f23',
+              color: historyIndex >= moveHistory.length - 1 ? '#3f3f46' : '#a1a1aa',
+              border: '1px solid #27272a',
               cursor: historyIndex >= moveHistory.length - 1 ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <ChevronRight size={14} />
             </button>
             <div style={{ flex: 1 }} />
-            <button onClick={loadRandomPosition} title="Random plausible position" style={{
+            <button onClick={loadRandomPosition} title="Random plausible position" className="icon-btn" style={{
               padding: '7px',
-              borderRadius: '2px',
-              backgroundColor: '#27272a',
+              borderRadius: '6px',
+              backgroundColor: '#1f1f23',
               color: '#a1a1aa',
-              border: 'none',
+              border: '1px solid #27272a',
               cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <Shuffle size={14} />
             </button>
-            <button onClick={flipBoard} title="Flip board" style={{
+            <button onClick={flipBoard} title="Flip board (F)" className="icon-btn" style={{
               padding: '7px',
-              borderRadius: '2px',
-              backgroundColor: '#27272a',
+              borderRadius: '6px',
+              backgroundColor: '#1f1f23',
               color: '#a1a1aa',
-              border: 'none',
+              border: '1px solid #27272a',
               cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <RefreshCw size={14} />
             </button>
-            <button onClick={resetBoard} title="Reset to start position" style={{
+            <button onClick={resetBoard} title="Reset to start position" className="icon-btn" style={{
               padding: '7px',
-              borderRadius: '2px',
-              backgroundColor: '#27272a',
+              borderRadius: '6px',
+              backgroundColor: '#1f1f23',
               color: '#a1a1aa',
-              border: 'none',
+              border: '1px solid #27272a',
               cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
@@ -1180,52 +1179,40 @@ export default function Board() {
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            padding: '8px 12px',
+            gap: '6px',
+            padding: '8px 10px',
             borderBottom: '1px solid #27272a',
             flexWrap: 'wrap',
-            fontSize: '10px',
           }}>
-            <span style={{
-              color: sideToMove === 'w' ? '#fafafa' : '#a1a1aa',
-              fontWeight: 600,
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-            }}>
-              {sideToMove === 'w' ? 'White' : 'Black'} to move
+            <span className="status-pill" data-tone="active" title={sideToMove === 'w' ? "White's turn" : "Black's turn"}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                backgroundColor: sideToMove === 'w' ? '#fafafa' : '#27272a',
+                border: '1px solid ' + (sideToMove === 'w' ? '#fafafa' : '#52525b'),
+                display: 'inline-block',
+              }} />
+              {sideToMove === 'w' ? 'White' : 'Black'}
             </span>
             {Math.abs(materialDelta) >= 0.1 && (
-              <span style={{
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                fontWeight: 700,
-                padding: '2px 6px',
-                borderRadius: '2px',
-                backgroundColor: materialDelta > 0 ? 'rgba(74, 222, 128, 0.12)' : 'rgba(248, 113, 113, 0.12)',
-                color: materialDelta > 0 ? '#86efac' : '#fca5a5',
-                letterSpacing: '-0.02em',
-              }} title={materialDelta > 0 ? 'White is up material' : 'Black is up material'}>
+              <span
+                className="status-pill"
+                data-tone={materialDelta > 0 ? 'up' : 'down'}
+                title={materialDelta > 0 ? 'White is up material' : 'Black is up material'}
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+              >
                 {materialDelta > 0 ? '+' : ''}{materialDelta.toFixed(1)}
               </span>
             )}
-            <span style={{
-              color: '#71717a',
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-            }}>
+            <span className="status-pill" data-tone="muted" title="Game phase">
               {phase}
             </span>
             <div style={{ flex: 1 }} />
-            <span title="Hold Shift to reveal piece values" style={{
-              color: showHeatmap ? '#f97316' : '#52525b',
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-              border: `1px solid ${showHeatmap ? '#f97316' : '#3f3f46'}`,
-              padding: '2px 6px',
-              borderRadius: '2px',
-              fontWeight: 600,
-            }}>
-              ⇧ Shift
+            <span
+              className="status-pill"
+              data-tone={showHeatmap ? 'hint' : 'muted'}
+              title="Hold Shift to reveal piece values"
+            >
+              <kbd>⇧</kbd> Shift
             </span>
           </div>
 
@@ -1247,21 +1234,25 @@ export default function Board() {
                 </div>
               )}
               {moveHistory.length > 1 && (
-                <div style={{
+                <div className="thin-scroll" style={{
                   display: 'flex',
                   flexWrap: 'wrap',
-                  gap: '3px',
+                  gap: '2px',
                   fontSize: '12px',
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                  maxHeight: '52px',
+                  maxHeight: '64px',
                   overflowY: 'auto',
-                  lineHeight: 1.5,
+                  lineHeight: 1.6,
                 }}>
                   {moveHistory.slice(1).map((m, i) => {
                     const isWhiteMove = i % 2 === 0;
                     const moveNum = Math.floor(i / 2) + 1;
+                    const active = historyIndex === i + 1;
                     return (
-                      <span key={i}
+                      <span
+                        key={i}
+                        className="history-token"
+                        data-active={active ? 'true' : 'false'}
                         onClick={() => {
                           setHistoryIndex(i + 1);
                           lastFetchedFen.current = '';
@@ -1269,12 +1260,7 @@ export default function Board() {
                           setInputFen(m.fen);
                         }}
                         style={{
-                          padding: '1px 5px',
-                          borderRadius: '2px',
-                          backgroundColor: historyIndex === i + 1 ? 'rgba(59, 130, 246, 0.25)' : 'transparent',
-                          color: historyIndex === i + 1 ? '#60a5fa' : (isWhiteMove ? '#e4e4e7' : '#a1a1aa'),
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
+                          color: active ? '#a5b4fc' : (isWhiteMove ? '#e4e4e7' : '#a1a1aa'),
                         }}
                       >
                         {isWhiteMove && <span style={{ color: '#52525b', marginRight: '3px' }}>{moveNum}.</span>}
@@ -1290,9 +1276,10 @@ export default function Board() {
           {/* Last move card */}
           {lastMoveAnalysis && (
             <div style={{
-              padding: '10px 12px',
+              padding: '12px 14px',
               borderBottom: '1px solid #27272a',
-              backgroundColor: 'rgba(15, 23, 42, 0.4)',
+              backgroundImage: 'linear-gradient(180deg, rgba(99,102,241,0.06) 0%, transparent 100%)',
+              backgroundColor: 'rgba(15, 23, 42, 0.35)',
             }}>
               <div style={{
                 fontSize: '9px',
@@ -1352,16 +1339,26 @@ export default function Board() {
                     letterSpacing: '0.08em',
                     textTransform: 'uppercase',
                     color: getQualityColor(lastMoveAnalysis.quality),
-                    backgroundColor: `${getQualityColor(lastMoveAnalysis.quality)}26`,
-                    padding: '3px 7px',
-                    borderRadius: '2px',
+                    backgroundColor: `${getQualityColor(lastMoveAnalysis.quality)}1F`,
+                    border: `1px solid ${getQualityColor(lastMoveAnalysis.quality)}55`,
+                    padding: '3px 8px',
+                    borderRadius: '999px',
                   }}>
                     {getQualityLabel(lastMoveAnalysis.quality)}
                   </span>
                 )}
                 {!lastMoveAnalysis.loading && typeof lastMoveAnalysis.winRateLoss === 'number' && lastMoveAnalysis.winRateLoss >= 1 && (
-                  <span style={{ fontSize: '10px', color: '#a1a1aa' }}>
-                    −{lastMoveAnalysis.winRateLoss.toFixed(1)}% win-rate
+                  <span style={{
+                    fontSize: '10px',
+                    color: '#fca5a5',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontWeight: 600,
+                    padding: '2px 7px',
+                    borderRadius: '999px',
+                    backgroundColor: 'rgba(248,113,113,0.08)',
+                    border: '1px solid rgba(248,113,113,0.20)',
+                  }}>
+                    −{lastMoveAnalysis.winRateLoss.toFixed(1)}%
                   </span>
                 )}
               </div>
@@ -1412,27 +1409,29 @@ export default function Board() {
                 <div
                   key={`${move.rank}-${idx}`}
                   onClick={() => handleMoveClick(move, idx)}
+                  className="top-move-row"
+                  data-selected={selectedMoveIndex === idx ? 'true' : 'false'}
                   style={{
                     padding: '8px 10px',
-                    marginBottom: '3px',
-                    borderRadius: '2px',
-                    backgroundColor: selectedMoveIndex === idx ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                    cursor: 'pointer',
-                    border: selectedMoveIndex === idx ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent'
+                    marginBottom: '4px',
+                    borderRadius: '6px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid transparent',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{
-                      width: '18px',
-                      height: '18px',
-                      borderRadius: '2px',
-                      backgroundColor: idx === 0 ? 'rgba(74, 222, 128, 0.2)' : '#27272a',
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '999px',
+                      backgroundColor: idx === 0 ? 'rgba(74, 222, 128, 0.18)' : '#27272a',
                       color: idx === 0 ? '#4ade80' : '#71717a',
                       fontSize: '10px',
-                      fontWeight: 700,
+                      fontWeight: 800,
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      justifyContent: 'center',
+                      border: idx === 0 ? '1px solid rgba(74,222,128,0.35)' : '1px solid #3f3f46',
                     }}>
                       {move.rank}
                     </span>
@@ -1447,12 +1446,14 @@ export default function Board() {
                     </span>
                     <span style={{
                       fontSize: '11px',
-                      fontWeight: 600,
+                      fontWeight: 700,
                       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                      padding: '2px 6px',
-                      borderRadius: '2px',
-                      backgroundColor: move.eval_pawns > 0 ? 'rgba(74, 222, 128, 0.15)' : move.eval_pawns < 0 ? 'rgba(248, 113, 113, 0.15)' : 'rgba(161, 161, 170, 0.15)',
-                      color: move.eval_pawns > 0 ? '#4ade80' : move.eval_pawns < 0 ? '#f87171' : '#a1a1aa'
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                      backgroundColor: move.eval_pawns > 0 ? 'rgba(74, 222, 128, 0.12)' : move.eval_pawns < 0 ? 'rgba(248, 113, 113, 0.12)' : 'rgba(161, 161, 170, 0.10)',
+                      color: move.eval_pawns > 0 ? '#86efac' : move.eval_pawns < 0 ? '#fca5a5' : '#a1a1aa',
+                      border: '1px solid ' + (move.eval_pawns > 0 ? 'rgba(74,222,128,0.30)' : move.eval_pawns < 0 ? 'rgba(248,113,113,0.30)' : 'rgba(161,161,170,0.20)'),
+                      letterSpacing: '-0.02em',
                     }}>
                       {move.isMate ? `M${move.mateIn}` : `${move.eval_pawns > 0 ? '+' : ''}${move.eval_pawns}`}
                     </span>
