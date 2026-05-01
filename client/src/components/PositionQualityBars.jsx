@@ -71,6 +71,9 @@ function ScoreBar({ label, value, max }) {
           transition: 'width 250ms ease-out',
         }} />
       </div>
+      {/* Only show the magnitude with a `+`; the bar's fill direction
+          already encodes which side leads, so the sign is redundant
+          (and the user explicitly didn't want minus signs). */}
       <span style={{
         width: '34px',
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -80,7 +83,7 @@ function ScoreBar({ label, value, max }) {
         textAlign: 'right',
         letterSpacing: '-0.02em',
       }}>
-        {value > 0 ? '+' : ''}{(value / 100).toFixed(2)}
+        {Math.abs(value) >= 1 ? `+${(Math.abs(value) / 100).toFixed(2)}` : '0.00'}
       </span>
     </div>
   );
