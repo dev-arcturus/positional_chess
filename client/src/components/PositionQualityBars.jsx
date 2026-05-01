@@ -91,6 +91,8 @@ export default function PositionQualityBars({ explanation }) {
     return null;
   }
   const eb = explanation.eval_breakdown;
+  const attack = explanation.king_safety?.engine_attack_potential;
+  const plan = explanation.principal_plan;
 
   return (
     <div style={{
@@ -123,6 +125,116 @@ export default function PositionQualityBars({ explanation }) {
       {HEAD_LABELS.map(([key, label, scale]) => (
         <ScoreBar key={key} label={label} value={eb[key] || 0} max={scale} />
       ))}
+
+      {/* Engine-driven attack potential — shows the side-to-move's
+          attacking chances against the enemy king as a horizontal bar
+          with a label. Only fires when at least one of the engine's
+          top moves targets the king (otherwise it would always be 0
+          and the user wouldn't learn anything). */}
+      {attack && attack.ratio > 0 && (
+        <div style={{
+          marginTop: '4px',
+          paddingTop: '6px',
+          borderTop: '1px dashed #27272a',
+          display: 'flex', alignItems: 'center', gap: '8px',
+          fontSize: '11px',
+        }}>
+          <span style={{
+            width: '78px',
+            color: '#a1a1aa',
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+          }}>Attack potential</span>
+          <div style={{
+            position: 'relative',
+            flex: 1,
+            height: '8px',
+            backgroundColor: '#0f0f12',
+            borderRadius: '999px',
+            border: '1px solid #27272a',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              position: 'absolute',
+              left: 0, top: 0, bottom: 0,
+              width: `${Math.round(attack.ratio * 100)}%`,
+              background: attack.attacking_side === 'white'
+                ? 'linear-gradient(90deg, #fde68a 0%, #f59e0b 100%)'
+                : 'linear-gradient(90deg, #818cf8 0%, #4338ca 100%)',
+              transition: 'width 250ms ease-out',
+            }} />
+          </div>
+          <span style={{
+            width: '34px',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: '10px',
+            color: '#e4e4e7',
+            fontWeight: 700,
+            textAlign: 'right',
+          }}>
+            {attack.moves_targeting_king}/{attack.total_moves}
+          </span>
+        </div>
+      )}
+
+      {/* Principal-plan one-liner. Engine-derived. */}
+      {plan && plan.description && (
+        <div style={{
+          marginTop: '4px',
+          paddingTop: '6px',
+          borderTop: '1px dashed #27272a',
+          fontSize: '11px',
+          color: '#a1a1aa',
+          display: 'flex',
+          gap: '6px',
+          flexDirection: 'column',
+        }}>
+          <div style={{
+            color: '#52525b',
+            fontSize: '9px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            fontWeight: 700,
+          }}>
+            Engine plan {plan.depth ? `· depth ${plan.depth}` : ''}
+          </div>
+          <div style={{ color: '#d4d4d8' }}>{plan.description}</div>
+          {plan.moves && plan.moves.length > 0 && (
+            <div style={{
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: '11px',
+              color: '#a1a1aa',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '4px',
+            }}>
+              {plan.moves.map((m, i) => (
+                <span key={i} style={{
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: '#1f1f23',
+                  border: '1px solid #27272a',
+                  color: i === 0 ? '#a5b4fc' : '#a1a1aa',
+                  fontWeight: i === 0 ? 700 : 500,
+                }}>
+                  {m.san}
+                </span>
+              ))}
+            </div>
+          )}
+          {plan.key_squares && plan.key_squares.length > 0 && (
+            <div style={{
+              fontSize: '10px',
+              color: '#71717a',
+            }}>
+              Key squares: <span style={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                color: '#a1a1aa',
+              }}>{plan.key_squares.join(', ')}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
