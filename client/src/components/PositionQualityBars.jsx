@@ -180,40 +180,66 @@ export default function PositionQualityBars({ explanation }) {
         </div>
       )}
 
-      {/* GM-style narrative: a structured, multi-paragraph synthesis of
-          the entire blob. This is the LLM-ready handoff — every claim is
-          grounded in the structured blob above so an LLM can verify and
-          embellish without inventing facts. */}
+      {/* GM-style narrative: always visible. The LLM-ready handoff —
+          every claim grounded in the structured blob so a downstream
+          LLM can verify and embellish without inventing facts. A small
+          "copy json" button lets the user grab the entire structured
+          blob to paste into an external chat. */}
       {explanation.summary_text && (
-        <details style={{
+        <div style={{
           marginTop: '6px',
-          paddingTop: '6px',
+          paddingTop: '8px',
           borderTop: '1px dashed #27272a',
         }}>
-          <summary style={{
-            cursor: 'pointer',
-            fontSize: '10px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            color: '#71717a',
-            fontWeight: 700,
-            outline: 'none',
-            userSelect: 'none',
-            paddingBottom: '6px',
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '6px',
           }}>
-            Position summary
-          </summary>
+            <span style={{
+              fontSize: '10px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              color: '#71717a',
+              fontWeight: 700,
+            }}>
+              Position summary
+            </span>
+            <button
+              onClick={() => {
+                try { navigator.clipboard.writeText(JSON.stringify(explanation, null, 2)); } catch { /* ignore */ }
+              }}
+              title="Copy the full structured explanation blob (paste into ChatGPT / Claude for a richer write-up)"
+              className="icon-btn"
+              style={{
+                padding: '3px 8px',
+                fontSize: '9px',
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                backgroundColor: '#1f1f23',
+                color: '#a1a1aa',
+                border: '1px solid #27272a',
+                borderRadius: '6px',
+                cursor: 'pointer',
+              }}
+            >
+              Copy JSON
+            </button>
+          </div>
           <div style={{
             fontSize: '11px',
             color: '#d4d4d8',
             lineHeight: 1.55,
             whiteSpace: 'pre-wrap',
-            maxHeight: '220px',
+            maxHeight: '260px',
             overflowY: 'auto',
+            paddingRight: '6px',
           }} className="thin-scroll">
             {explanation.summary_text}
           </div>
-        </details>
+        </div>
       )}
 
       {/* Principal-plan one-liner. Engine-derived. */}
