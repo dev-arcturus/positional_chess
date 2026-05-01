@@ -13,6 +13,9 @@
 import init, {
   analyze as wasmAnalyze,
   analyze_pv as wasmAnalyzePv,
+  evaluate_fen as wasmEvaluateFen,
+  piece_contributions as wasmPieceContributions,
+  piece_value_at as wasmPieceValueAt,
   version as wasmVersion,
 } from './wasm-rs/engine_rs.js';
 
@@ -122,6 +125,50 @@ export function composeTagline(rustResult) {
     tagline,
     fenAfter: rustResult.fen_after,
   };
+}
+
+// Static evaluation of a FEN. Returns `{ phase, white, black, final_cp }`
+// where each side has a per-head breakdown (material/psqt/mobility/pawns/
+// king_safety/threats/imbalance), each tapered to mg+eg.
+export function evaluateFen(fen) {
+  if (!ready) return null;
+  try {
+    const r = wasmEvaluateFen(fen);
+    if (!r || r.error) return null;
+    return r;
+  } catch (e) {
+    console.warn('[engine-rs] evaluate_fen failed:', e);
+    return null;
+  }
+}
+
+// All non-king pieces' contribution to the static evaluation. Each entry:
+//   { square, color, role, value_cp, material, psqt, mobility, pawns,
+//     king_safety, threats, imbalance }
+// `value_cp` is side-relative (positive = good for piece's owner).
+export function pieceContributionsForFen(fen) {
+  if (!ready) return null;
+  try {
+    const r = wasmPieceContributions(fen);
+    if (!Array.isArray(r)) return null;
+    return r;
+  } catch (e) {
+    console.warn('[engine-rs] piece_contributions failed:', e);
+    return null;
+  }
+}
+
+// Single-piece contribution. Same shape as one entry from pieceContributionsForFen.
+export function pieceValueAt(fen, square) {
+  if (!ready) return null;
+  try {
+    const r = wasmPieceValueAt(fen, square);
+    if (!r || r.error) return null;
+    return r;
+  } catch (e) {
+    console.warn('[engine-rs] piece_value_at failed:', e);
+    return null;
+  }
 }
 
 // Kick off init eagerly so the first call has a good chance of being warm.

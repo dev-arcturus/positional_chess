@@ -4,6 +4,7 @@
 // discovered check, removal-of-defender.
 
 import { Chess } from 'chess.js';
+import { analyzeMove as wasmAnalyzeMove, isReady as wasmReady } from './analyzer-rs.js';
 
 const PIECE_VALUE = { p: 100, n: 300, b: 320, r: 500, q: 900, k: 20_000 };
 const PIECE_NAME  = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
@@ -133,11 +134,15 @@ function winRateFromMover(cpMoverPOV) {
   return winRate(cpMoverPOV);
 }
 
-// Lichess loss-based judgment ladder. loss is in win-rate percentage
-// points (0..100). Lichess thresholds: <10 OK, 10-20 inaccuracy,
-// 20-30 mistake, ≥30 blunder.
+// Loss-based judgment ladder. `loss` is win-rate percentage-points lost
+// vs. engine best. Thresholds tuned slightly tighter than vanilla Lichess
+// (4 / 8 / 12 / 20 / 30) so the ladder has a usable middle: most "looks
+// fine" moves land in `good`/`neutral` rather than collapsing into a
+// single bucket.
 function classifyByLoss(loss) {
-  if (loss < 10) return 'good';
+  if (loss < 4) return 'excellent';
+  if (loss < 8) return 'good';
+  if (loss < 12) return 'neutral';
   if (loss < 20) return 'inaccuracy';
   if (loss < 30) return 'mistake';
   return 'blunder';
@@ -383,20 +388,55 @@ function moverScoreToWhite(scoreMoverPOV, moverColor) {
   return moverColor === 'w' ? scoreMoverPOV : -scoreMoverPOV;
 }
 
-// Lichess-style classifier with two extras drawn from chess analysis tools:
-//   • brilliant — top-1 + a real material sacrifice in a non-decided position
-//   • great     — top-1 where alternatives were ≥ 10pp worse ("only move")
-//   • missed_mate — best move had a mate score, played move did not
+// ───────────────────────────────────────────────────────────────────────────
+// Sophisticated move classifier
 //
-// Otherwise the ladder is the standard Lichess judgment: good / inaccuracy
-// / mistake / blunder by win-rate-loss thresholds 10 / 20 / 30 pp.
+// The signal is a fusion of THREE engine-derived dimensions:
+//
+//   1. Win-rate loss (the standard Lichess metric).
+//        loss = wrBest − wrPlayed, in percentage points.
+//
+//   2. Position complexity (how hard was it to find the best move?).
+//        complexity = number of multi-PV alternatives within 50cp of best.
+//        Forced positions (complexity = 1) are easy → finding best ≈ free.
+//        Rich positions (complexity ≥ 4) reward finding best more strongly.
+//
+//   3. Sacrifice quality (is "best" a non-obvious tactical resource?).
+//        We use the Rust analyzer's eval-aware sacrifice flag — which fires
+//        only when the offered piece pays for itself with structural,
+//        threat, or king-safety compensation. Plain SEE-based detection
+//        misclassifies routine captures as sacrifices.
+//
+// Quality ladder:
+//
+//   brilliant   — best move + REAL sacrifice + complexity ≥ 2 + position
+//                 not already won. Demands all three: there's plausible
+//                 alternatives, the chosen move offers material, and that
+//                 offering is sound (Rust verifies). One-dim "best+SEE<0"
+//                 over-fires here.
+//   great       — best move AND (only-move OR critical decision).
+//                 only-move:     wrBest − wrSecond ≥ 10pp
+//                 critical:      wrBefore moved by ≥ 15pp from this turn
+//   best        — engine's top choice; nothing else special.
+//   excellent   — non-best top-3 with loss < 4pp (effectively as good).
+//   good        — loss < 8pp.
+//   neutral     — loss < 12pp (kept for backwards-compat with the UI ladder).
+//   inaccuracy  — loss < 20pp.
+//   mistake     — loss < 30pp.
+//   blunder     — loss ≥ 30pp, OR drops a winning position to losing.
+//   missed_mate — best had mate, played didn't.
+// ───────────────────────────────────────────────────────────────────────────
+
+const COMPLEXITY_BAND_CP = 50; // moves within this much of best are "plausible"
+
 function classifyMove({
+  fenBefore,
   moveUCI,
   moverColor,
   evalBeforeWhite,
   evalAfterWhite,
   topMoves,
-  sacrifice,
+  legacySacrifice,
 }) {
   const wrMover = (cpWhite) =>
     moverColor === 'w' ? winRate(cpWhite) : 100 - winRate(cpWhite);
@@ -417,21 +457,62 @@ function classifyMove({
   const onlyMoveGap = wrBest - wrSecond;
   const isOnlyMove = onlyMoveGap >= 10;
   const isBestMove = best && best.move === moveUCI;
+  const inTop3 = topMoves && topMoves.slice(0, 3).some(m => m.move === moveUCI);
 
-  // Detect missed mate: engine's top move ended in mate, but the played
-  // move's resulting position doesn't.
+  // Position complexity: how many multi-PV alternatives are within 50cp
+  // of the best move's score? Mover-POV scores from the engine.
+  let complexity = 1;
+  if (topMoves && topMoves.length > 0) {
+    const bestScore = topMoves[0].score;
+    complexity = topMoves.filter(m => Math.abs(m.score - bestScore) <= COMPLEXITY_BAND_CP).length;
+  }
+  const isCriticalPosition = onlyMoveGap >= 15
+    || (best && Math.abs(bestWhite - secondWhite) >= 100);
+
+  // Eval-aware sacrifice from the Rust analyzer when available. This is
+  // the gating signal for "brilliant": only a verified sacrifice (visible
+  // compensation) qualifies — never a plain SEE-negative move.
+  let realSacrifice = false;
+  if (wasmReady() && fenBefore && moveUCI) {
+    try {
+      const r = wasmAnalyzeMove(fenBefore, moveUCI);
+      if (r && Array.isArray(r.motifs)) {
+        realSacrifice = r.motifs.some(m => m.id === 'sacrifice');
+      }
+    } catch { /* ignore */ }
+  }
+  // Fall back to the old SEE-only check ONLY if WASM isn't ready and the
+  // caller already computed a legacy sacrifice flag for us.
+  if (!wasmReady() && legacySacrifice) {
+    realSacrifice = true;
+  }
+
+  // Decided-position guard: brilliant requires real stakes. If the side
+  // is already winning by 600cp+ (≈90% win rate), no shot at brilliant.
+  const positionDecided = wrBefore >= 90 || wrBefore <= 10;
+
+  // Detect missed mate.
   const bestHasMate = best && best.mate !== null && best.mate !== undefined;
   const playedHasMate = playedInTop && playedInTop.mate !== null && playedInTop.mate !== undefined;
+  const missedMate = bestHasMate && !playedHasMate;
+
+  // Brutal threshold: dropping winning to losing is always a blunder
+  // even when raw loss is small (e.g. wrBefore=92, wrPlayed=8 = -84pp).
+  const lostWin = wrBefore >= 75 && wrPlayed <= 35;
 
   let quality;
-  if (isBestMove && sacrifice && wrBefore < 85) {
+  if (missedMate) {
+    quality = 'missed_mate';
+  } else if (isBestMove && realSacrifice && complexity >= 2 && !positionDecided) {
     quality = 'brilliant';
-  } else if (isBestMove && isOnlyMove) {
+  } else if (isBestMove && (isOnlyMove || isCriticalPosition)) {
     quality = 'great';
   } else if (isBestMove) {
     quality = 'best';
-  } else if (bestHasMate && !playedHasMate) {
-    quality = 'missed_mate';
+  } else if (lostWin) {
+    quality = 'blunder';
+  } else if (inTop3 && loss < 4) {
+    quality = 'excellent';
   } else {
     quality = classifyByLoss(loss);
   }
@@ -439,7 +520,7 @@ function classifyMove({
   return {
     quality,
     loss,
-    effectiveLoss: loss, // kept for callers; difficulty weighting removed
+    effectiveLoss: loss,
     wrBefore,
     wrPlayed,
     wrBest,
@@ -447,6 +528,9 @@ function classifyMove({
     onlyMoveGap,
     isBestMove,
     isOnlyMove,
+    isCriticalPosition,
+    complexity,
+    realSacrifice,
     bestMoveUCI: best ? best.move : null,
   };
 }
@@ -471,21 +555,27 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
   const factors = [];
   const motifs = [];
 
-  // Sacrifice detection upfront — needed by classifier.
-  const sacrifice = movingPiece
+  // Legacy SEE-only sacrifice flag — used only as fallback when the WASM
+  // analyzer hasn't initialised yet. The classifier prefers the eval-aware
+  // version from Rust whenever available.
+  const legacySacrifice = movingPiece
     ? detectSacrificeViaSEE(chessAfter, to, movingPiece, captured)
     : false;
-  if (sacrifice) motifs.push('sacrifice');
 
   // Classify against engine top moves.
   const cls = classifyMove({
+    fenBefore,
     moveUCI,
     moverColor: sideToMove,
     evalBeforeWhite: evalBefore,
     evalAfterWhite: evalAfter,
     topMoves: opts.topMoves || [],
-    sacrifice,
+    legacySacrifice,
   });
+  // Use whichever sacrifice signal the classifier ended up trusting so
+  // motifs / tagline composition stay consistent with the verdict.
+  const sacrifice = cls.realSacrifice;
+  if (sacrifice) motifs.push('sacrifice');
   let quality = cls.quality;
 
   // Eval delta from mover's POV (display only).
@@ -680,7 +770,9 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
     brilliant:    'A brilliant move — a non-obvious tactical resource.',
     great:        'A great move — the only move that keeps the advantage.',
     best:         'The best move in the position.',
+    excellent:    'Excellent — practically as strong as the engine choice.',
     good:         'A solid move that maintains the balance.',
+    neutral:      'A reasonable move; close alternatives were marginally better.',
     inaccuracy:   'A slight inaccuracy — better options were available.',
     mistake:      'A mistake. The position is now worse than it should be.',
     blunder:      'A blunder. This loses significant advantage.',

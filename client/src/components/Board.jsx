@@ -923,7 +923,9 @@ export default function Board() {
     brilliant:   '#22d3ee',   // cyan-400
     great:       '#34d399',   // emerald-400
     best:        '#4ade80',   // green-400
-    good:        '#86efac',   // green-300
+    excellent:   '#86efac',   // green-300
+    good:        '#a7f3d0',   // emerald-200
+    neutral:     '#a1a1aa',   // zinc-400
     inaccuracy:  '#fbbf24',   // amber-400
     mistake:     '#fb923c',   // orange-400
     blunder:     '#ef4444',   // red-500
@@ -933,7 +935,9 @@ export default function Board() {
     brilliant:   '!!',
     great:       '!',
     best:        '★',
+    excellent:   '✓',
     good:        '',
+    neutral:     '',
     inaccuracy:  '?!',
     mistake:     '?',
     blunder:     '??',
@@ -943,7 +947,9 @@ export default function Board() {
     brilliant:   'Brilliant',
     great:       'Great',
     best:        'Best',
+    excellent:   'Excellent',
     good:        'Good',
+    neutral:     'Neutral',
     inaccuracy:  'Inaccuracy',
     mistake:     'Mistake',
     blunder:     'Blunder',
