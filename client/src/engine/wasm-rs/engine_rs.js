@@ -53,6 +53,21 @@ export function evaluate_fen(fen) {
 }
 
 /**
+ * Comprehensive structured explanation of why one side has the
+ * advantage. Returns the full `Explanation` blob — material, pawn
+ * structure, king safety, activity, line control, immediate tactics,
+ * and high-level themes — designed for downstream LLM consumption.
+ * @param {string} fen
+ * @returns {any}
+ */
+export function explain_position(fen) {
+    const ptr0 = passStringToWasm0(fen, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.explain_position(ptr0, len0);
+    return takeObject(ret);
+}
+
+/**
  * Per-piece contribution to the static evaluation. Returns one entry per
  * non-king piece on the board: `value_cp` (side-relative), plus the
  * breakdown by head (material / psqt / mobility / pawns / king_safety /

@@ -26,7 +26,12 @@ wasm-pack build --target web --release --out-dir pkg
 
 # Optional secondary optimisation pass. Skipped if wasm-opt isn't installed.
 if command -v wasm-opt >/dev/null 2>&1; then
-  wasm-opt --enable-bulk-memory-opt -O3 \
+  # Newer rustc emits bulk-memory + nontrapping-float-to-int by default;
+  # we have to opt-in for wasm-opt to validate them.
+  wasm-opt \
+    --enable-bulk-memory-opt \
+    --enable-nontrapping-float-to-int \
+    -O3 \
     -o pkg/engine_rs_bg.opt.wasm pkg/engine_rs_bg.wasm
   mv pkg/engine_rs_bg.opt.wasm pkg/engine_rs_bg.wasm
 fi

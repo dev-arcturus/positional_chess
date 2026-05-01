@@ -26,6 +26,14 @@ export function analyze_pv(start_fen: string, ucis: any[], plies: number): any;
 export function evaluate_fen(fen: string): any;
 
 /**
+ * Comprehensive structured explanation of why one side has the
+ * advantage. Returns the full `Explanation` blob — material, pawn
+ * structure, king safety, activity, line control, immediate tactics,
+ * and high-level themes — designed for downstream LLM consumption.
+ */
+export function explain_position(fen: string): any;
+
+/**
  * Per-piece contribution to the static evaluation. Returns one entry per
  * non-king piece on the board: `value_cp` (side-relative), plus the
  * breakdown by head (material / psqt / mobility / pawns / king_safety /
@@ -51,6 +59,7 @@ export interface InitOutput {
     readonly analyze: (a: number, b: number, c: number, d: number) => number;
     readonly analyze_pv: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly evaluate_fen: (a: number, b: number) => number;
+    readonly explain_position: (a: number, b: number) => number;
     readonly piece_contributions: (a: number, b: number) => number;
     readonly piece_value_at: (a: number, b: number, c: number, d: number) => number;
     readonly version: (a: number) => void;
