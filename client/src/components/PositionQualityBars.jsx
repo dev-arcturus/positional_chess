@@ -177,6 +177,42 @@ export default function PositionQualityBars({ explanation }) {
         </div>
       )}
 
+      {/* GM-style narrative: a structured, multi-paragraph synthesis of
+          the entire blob. This is the LLM-ready handoff — every claim is
+          grounded in the structured blob above so an LLM can verify and
+          embellish without inventing facts. */}
+      {explanation.summary_text && (
+        <details style={{
+          marginTop: '6px',
+          paddingTop: '6px',
+          borderTop: '1px dashed #27272a',
+        }}>
+          <summary style={{
+            cursor: 'pointer',
+            fontSize: '10px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            color: '#71717a',
+            fontWeight: 700,
+            outline: 'none',
+            userSelect: 'none',
+            paddingBottom: '6px',
+          }}>
+            Position summary
+          </summary>
+          <div style={{
+            fontSize: '11px',
+            color: '#d4d4d8',
+            lineHeight: 1.55,
+            whiteSpace: 'pre-wrap',
+            maxHeight: '220px',
+            overflowY: 'auto',
+          }} className="thin-scroll">
+            {explanation.summary_text}
+          </div>
+        </details>
+      )}
+
       {/* Principal-plan one-liner. Engine-derived. */}
       {plan && plan.description && (
         <div style={{
