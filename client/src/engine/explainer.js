@@ -500,12 +500,47 @@ function classifyMove({
   // even when raw loss is small (e.g. wrBefore=92, wrPlayed=8 = -84pp).
   const lostWin = wrBefore >= 75 && wrPlayed <= 35;
 
+  // "Obvious move" guard. Even a forced-only-move is *not* a "great"
+  // move if it's something a beginner would play instinctively:
+  //   - Recapture: opponent just took our piece, we take theirs back.
+  //   - Free capture: enemy piece sitting on a SEE-positive square,
+  //                   capturing it gains material outright.
+  //   - Forced response: only one legal move (e.g. the only check escape).
+  //
+  // We demote `great` → `best` for these. (We still keep them as "best"
+  // so the user knows they played the engine's choice — just not the
+  // "brilliant find" implication of `great`.)
+  const isObviousCapture = (() => {
+    if (!fenBefore) return false;
+    try {
+      const c = new Chess(fenBefore);
+      const fromSq = moveUCI.slice(0, 2);
+      const toSq = moveUCI.slice(2, 4);
+      const movingPiece = c.get(fromSq);
+      const targetPiece = c.get(toSq);
+      if (!movingPiece || !targetPiece) return false;
+      // Must be capturing an enemy piece.
+      if (targetPiece.color === movingPiece.color) return false;
+      // Recovered ≥ moved (so we win or break even materially) AND the
+      // SEE on the target square is non-negative for us before we move.
+      const recovered = PIECE_VALUE[targetPiece.type];
+      const moved = PIECE_VALUE[movingPiece.type];
+      if (recovered < moved - 50) return false;
+      const oppGain = see(c, toSq, movingPiece.color === 'w' ? 'b' : 'w');
+      return (recovered - oppGain) >= 0;
+    } catch {
+      return false;
+    }
+  })();
+  const onlyLegalMove = topMoves && topMoves.length === 1;
+
   let quality;
   if (missedMate) {
     quality = 'missed_mate';
   } else if (isBestMove && realSacrifice && complexity >= 2 && !positionDecided) {
     quality = 'brilliant';
-  } else if (isBestMove && (isOnlyMove || isCriticalPosition)) {
+  } else if (isBestMove && (isOnlyMove || isCriticalPosition)
+             && !isObviousCapture && !onlyLegalMove) {
     quality = 'great';
   } else if (isBestMove) {
     quality = 'best';

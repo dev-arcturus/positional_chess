@@ -27,6 +27,7 @@ use shakmaty::{fen::Fen, CastlingMode, Chess, Position};
 use wasm_bindgen::prelude::*;
 
 mod eval;
+mod explanation;
 mod motifs;
 mod piece_value;
 mod see;
@@ -127,6 +128,21 @@ pub fn piece_contributions(fen: &str) -> JsValue {
             let pcs = piece_value::piece_contributions(pos.board());
             serde_wasm_bindgen::to_value(&pcs).unwrap_or(JsValue::NULL)
         }
+        Err(e) => {
+            let err = serde_json::json!({ "error": e });
+            serde_wasm_bindgen::to_value(&err).unwrap_or(JsValue::NULL)
+        }
+    }
+}
+
+/// Comprehensive structured explanation of why one side has the
+/// advantage. Returns the full `Explanation` blob — material, pawn
+/// structure, king safety, activity, line control, immediate tactics,
+/// and high-level themes — designed for downstream LLM consumption.
+#[wasm_bindgen]
+pub fn explain_position(fen: &str) -> JsValue {
+    match explanation::static_explanation(fen) {
+        Ok(e) => serde_wasm_bindgen::to_value(&e).unwrap_or(JsValue::NULL),
         Err(e) => {
             let err = serde_json::json!({ "error": e });
             serde_wasm_bindgen::to_value(&err).unwrap_or(JsValue::NULL)

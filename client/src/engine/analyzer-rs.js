@@ -14,6 +14,7 @@ import init, {
   analyze as wasmAnalyze,
   analyze_pv as wasmAnalyzePv,
   evaluate_fen as wasmEvaluateFen,
+  explain_position as wasmExplainPosition,
   piece_contributions as wasmPieceContributions,
   piece_value_at as wasmPieceValueAt,
   version as wasmVersion,
@@ -223,6 +224,22 @@ export function pieceContributionsForFen(fen) {
     return r;
   } catch (e) {
     console.warn('[engine-rs] piece_contributions failed:', e);
+    return null;
+  }
+}
+
+// Comprehensive structured explanation of a position. Returns the full
+// `Explanation` blob: material, pawn structure, king safety, activity,
+// line control, immediate tactics, and high-level themes. Designed for
+// downstream LLM consumption.
+export function explainPosition(fen) {
+  if (!ready) return null;
+  try {
+    const r = wasmExplainPosition(fen);
+    if (!r || r.error) return null;
+    return r;
+  } catch (e) {
+    console.warn('[engine-rs] explain_position failed:', e);
     return null;
   }
 }

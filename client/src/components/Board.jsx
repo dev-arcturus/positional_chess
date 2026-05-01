@@ -6,6 +6,9 @@ import {
   Shuffle,
 } from 'lucide-react';
 import EvalBar from './EvalBar';
+import CapturedStrip from './CapturedStrip';
+import PositionQualityBars from './PositionQualityBars';
+import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
 import {
   getTopMoves,
   explainMoveAt,
@@ -140,6 +143,21 @@ export default function Board() {
   // Opening name (looked up by FEN over the entire history; once you're
   // out of book, the last-known opening sticks).
   const [openingName, setOpeningName] = useState(null);
+
+  // Comprehensive structured POSITION explanation blob (distinct from
+  // the per-move `explanation` state above). Powers the position-quality
+  // bars and (later) the LLM-driven prose explanation.
+  const [posExplanation, setPosExplanation] = useState(null);
+  React.useEffect(() => {
+    if (!wasmIsReady() || !fen) return;
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      if (cancelled) return;
+      const e = explainPosition(fen);
+      if (!cancelled && e) setPosExplanation(e);
+    }, 0);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [fen]);
 
   // Click-to-select with legal-move indicators (also set during drag).
   const [selectedSquare, setSelectedSquare] = useState(null);
@@ -978,7 +996,17 @@ export default function Board() {
         width: '100%',
         maxWidth: '1080px',
       }}>
-        {/* LEFT: eval bar flush with the board */}
+        {/* LEFT: captured strips + eval bar + board, in a vertical column. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {/* Top strip: shows the side at the top of the board. The
+              orientation prop flips this so it always matches the
+              physically-top side of the board. */}
+          <div style={{ width: `${36 + 4 + 600}px` }}>
+            <CapturedStrip
+              fen={fen}
+              side={orientation === 'white' ? 'black' : 'white'}
+            />
+          </div>
         <div style={{ display: 'flex', alignItems: 'stretch', gap: '4px' }}>
           <div style={{ width: '36px', height: '600px' }}>
             <EvalBar evalCp={evalCp} mate={evalMate} result={gameResult} loading={topMovesLoading} />
@@ -1096,6 +1124,21 @@ export default function Board() {
                 Computing values…
               </div>
             )}
+          </div>
+        </div>
+          {/* Bottom strip: shows the side at the bottom of the board
+              (the player whose POV the orientation matches). */}
+          <div style={{ width: `${36 + 4 + 600}px` }}>
+            <CapturedStrip
+              fen={fen}
+              side={orientation}
+            />
+          </div>
+          {/* Position-quality bars — non-material decomposition of the
+              eval. Sits flush under the bottom captured strip so the
+              whole left column reads as a single analytical unit. */}
+          <div style={{ width: `${36 + 4 + 600}px` }}>
+            <PositionQualityBars explanation={posExplanation} />
           </div>
         </div>
 
