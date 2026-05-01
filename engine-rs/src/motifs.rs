@@ -166,6 +166,9 @@ pub fn detect_all(
     detect_attacks_king(&ctx, &mut out);
     detect_eyes_king_zone(&ctx, &mut out);
     detect_smothered_mate_hint(&ctx, &mut out);
+    detect_anastasia_mate_threat(&ctx, &mut out);
+    detect_bodens_mate_threat(&ctx, &mut out);
+    detect_arabian_mate_threat(&ctx, &mut out);
     detect_luft(&ctx, &mut out);
 
     // Positional / piece-specific ───────────────────────────────────────
@@ -1044,6 +1047,131 @@ fn detect_smothered_mate_hint(ctx: &Context, out: &mut Vec<Motif>) {
     if (zone & enemy).count() >= zone.count() - 1 {
         push(out, "smothered_hint", "Threatens smothered mate");
     }
+}
+
+/// **Anastasia's mate threat**: classic pattern where a knight (e.g. on
+/// e7 / e2) cuts off the king's escape squares while a rook drops down
+/// the h-file (or a-file) to give mate. Concretely we flag the *setup*
+/// — knight in place, rook ready to swing — without verifying the mate
+/// itself (that requires search). Pattern:
+///
+///   • enemy king on the h-file (or a-file), rank 7-8 (or 1-2)
+///   • our knight on e7/e8 (mirror for black) controlling g8/g6/f8
+///   • our rook reaches h-file (or a-file) directly or via lift
+///
+/// The motif fires after the move when this geometry first appears.
+fn detect_anastasia_mate_threat(ctx: &Context, out: &mut Vec<Motif>) {
+    if out.iter().any(|m| ["checkmate","double_check"].contains(&m.id.as_str())) {
+        return;
+    }
+    let board = ctx.after.board();
+    let opp_king = match find_king(board, ctx.opp) { Some(k) => k, None => return };
+    // King must be on the rim (a or h file) at rank 7+ for white attacker,
+    // or rank 1-2 for black attacker.
+    let on_h_file = opp_king.file() == File::H;
+    let on_a_file = opp_king.file() == File::A;
+    if !(on_h_file || on_a_file) { return; }
+    // Knight cut-off square: for h-file king, e6/e7 (white attacking) or
+    // e2/e3 (black attacking). For a-file king, mirror via e-file too.
+    let knight_squares = if on_h_file {
+        match ctx.mover {
+            Color::White => vec![Square::E7, Square::G6, Square::F6, Square::F7],
+            Color::Black => vec![Square::E2, Square::G3, Square::F3, Square::F2],
+        }
+    } else {
+        // a-file king: knight on c/d squares
+        match ctx.mover {
+            Color::White => vec![Square::D7, Square::B6, Square::C6, Square::C7],
+            Color::Black => vec![Square::D2, Square::B3, Square::C3, Square::C2],
+        }
+    };
+    let our_knights = board.by_piece(Piece { color: ctx.mover, role: Role::Knight });
+    let knight_in_place = knight_squares.iter().any(|sq| our_knights.contains(*sq));
+    if !knight_in_place { return; }
+    // Rook on the king's rim file?
+    let our_rooks = board.by_piece(Piece { color: ctx.mover, role: Role::Rook });
+    let target_file = if on_h_file { File::H } else { File::A };
+    let rook_on_file = our_rooks.into_iter().any(|s| s.file() == target_file);
+    if !rook_on_file { return; }
+    push(out, "anastasia_mate_threat", "Threatens Anastasia's mate (knight cut-off + rook on the rim file)");
+}
+
+/// **Boden's mate threat**: two of our bishops aim at the enemy king
+/// from opposite long diagonals after the king has moved (or been
+/// chased) to a queenside or kingside corner-adjacent square (c8, c1,
+/// f8, f1, g8, g1). Pattern:
+///
+///   • enemy king on c1/c8/f1/f8/g1/g8
+///   • one of our bishops attacks the king square
+///   • a second of our bishops also attacks the king square via the
+///     other-colour diagonal
+///   • neither bishop is currently checking *yet* (so it's a threat,
+///     not a check we already gave)
+fn detect_bodens_mate_threat(ctx: &Context, out: &mut Vec<Motif>) {
+    if out.iter().any(|m| ["checkmate","check","double_check"].contains(&m.id.as_str())) {
+        return;
+    }
+    let board = ctx.after.board();
+    let opp_king = match find_king(board, ctx.opp) { Some(k) => k, None => return };
+    let king_corner_ok = matches!(opp_king,
+        Square::C1 | Square::C8 | Square::F1 | Square::F8 |
+        Square::G1 | Square::G8 | Square::B1 | Square::B8);
+    if !king_corner_ok { return; }
+    let occ = board.occupied();
+    let our_bishops = board.by_piece(Piece { color: ctx.mover, role: Role::Bishop });
+    if our_bishops.count() < 2 { return; }
+    // Count bishops whose attacks would hit the king square if interposing
+    // pieces were cleared. We use raw bishop_attacks (already respects
+    // current occupancy), and check both bishops can pin pressure.
+    let mut hits = 0u32;
+    let mut both_colours = (false, false);
+    for sq in our_bishops {
+        let attacks = bishop_attacks(sq, occ);
+        if attacks.contains(opp_king) {
+            hits += 1;
+            // Note which diagonal-colour the bishop is on.
+            let light = (sq.file() as u8 + sq.rank() as u8) % 2 == 1;
+            if light { both_colours.0 = true; } else { both_colours.1 = true; }
+        }
+    }
+    if hits >= 2 && both_colours.0 && both_colours.1 {
+        push(out, "bodens_mate_threat", "Threatens Boden's mate (two bishops crossfire on the king)");
+    }
+}
+
+/// **Arabian mate threat**: rook + knight against king in the corner
+/// (h8/h1/a8/a1). Knight covers the escape squares one diagonal off the
+/// rook check. Pattern:
+///
+///   • enemy king on a corner: a1/h1/a8/h8
+///   • our rook on the same rank or file as the king
+///   • our knight 2 squares away covering the king's escape
+fn detect_arabian_mate_threat(ctx: &Context, out: &mut Vec<Motif>) {
+    if out.iter().any(|m| ["checkmate","double_check","anastasia_mate_threat"].contains(&m.id.as_str())) {
+        return;
+    }
+    let board = ctx.after.board();
+    let opp_king = match find_king(board, ctx.opp) { Some(k) => k, None => return };
+    let in_corner = matches!(opp_king, Square::A1 | Square::H1 | Square::A8 | Square::H8);
+    if !in_corner { return; }
+    let our_rooks = board.by_piece(Piece { color: ctx.mover, role: Role::Rook });
+    let our_knights = board.by_piece(Piece { color: ctx.mover, role: Role::Knight });
+    let occ = board.occupied();
+    // Need a rook attacking the king's line, plus a knight close enough
+    // to the king to cover escape (≤2 squares from king in chebyshev).
+    let mut rook_threat = false;
+    for sq in our_rooks {
+        if rook_attacks(sq, occ).contains(opp_king) { rook_threat = true; break; }
+    }
+    if !rook_threat { return; }
+    let mut knight_close = false;
+    for sq in our_knights {
+        let df = (sq.file() as i32 - opp_king.file() as i32).abs();
+        let dr = (sq.rank() as i32 - opp_king.rank() as i32).abs();
+        if df.max(dr) <= 2 { knight_close = true; break; }
+    }
+    if !knight_close { return; }
+    push(out, "arabian_mate_threat", "Threatens an Arabian-style mate (rook + knight against the cornered king)");
 }
 
 /// Luft: pawn push that is a *response* to an actual back-rank threat.
@@ -2367,8 +2495,11 @@ fn priority_of(id: &str) -> u32 {
         "pin" => 7,
         "skewer" => 8,
         "back_rank_mate_threat" => 9,
-        "removes_defender" => 10,
-        "smothered_hint" => 11,
+        "anastasia_mate_threat" => 10,
+        "bodens_mate_threat" => 11,
+        "arabian_mate_threat" => 12,
+        "removes_defender" => 13,
+        "smothered_hint" => 14,
         // Captures & trades.
         "exchange_sacrifice" => 14,
         "simplifies" => 15,             // trade when ahead → reads as the *reason*
