@@ -63,17 +63,6 @@ export default function EvalBar({ evalCp, mate, result, loading }) {
     labelAtTop = false; labelOnDark = false;
   }
 
-  // Decisive accent — mate or terminal positions get a glow on the
-  // *winning* end of the bar so the verdict reads at a glance.
-  let glowColor = null;
-  if (isResult && result === '1-0')      glowColor = '#fafafa';   // white wins → white glow
-  else if (isResult && result === '0-1') glowColor = '#27272a';   // black wins → dark glow (subtle)
-  else if (isMate && mate > 0)           glowColor = '#22d3ee';   // mating side: cyan
-  else if (isMate && mate < 0)           glowColor = '#ef4444';   // mated side: red
-  const glowAtTop = isResult
-    ? result === '1-0'
-    : (isMate ? mate > 0 : false);
-
   return (
     <div style={{
       width: '100%',
@@ -87,33 +76,20 @@ export default function EvalBar({ evalCp, mate, result, loading }) {
       flexDirection: 'column',
       boxShadow: 'inset 0 1px 0 0 rgba(255,255,255,0.04), 0 1px 2px 0 rgba(0,0,0,0.4)',
     }}>
-      {/* Black portion (top) — radial highlight tilts the band slightly */}
+      {/* Black portion (top) — flat colour. */}
       <div style={{
         flex: `${100 - percentage} 0 0`,
-        background: 'radial-gradient(120% 80% at 50% 30%, #3f3f46 0%, #27272a 60%, #1e1e21 100%)',
+        backgroundColor: '#27272a',
         transition: 'flex 0.35s cubic-bezier(.4,0,.2,1)',
       }} />
-      {/* White portion (bottom) */}
+      {/* White portion (bottom) — flat colour. */}
       <div style={{
         flex: `${percentage} 0 0`,
-        background: 'radial-gradient(120% 80% at 50% 70%, #ffffff 0%, #ededee 60%, #d4d4d8 100%)',
+        backgroundColor: '#e4e4e7',
         transition: 'flex 0.35s cubic-bezier(.4,0,.2,1)',
       }} />
 
-      {/* Glow overlay (mate / decided games) */}
-      {glowColor && (
-        <div style={{
-          position: 'absolute',
-          [glowAtTop ? 'top' : 'bottom']: 0,
-          left: 0,
-          right: 0,
-          height: '40%',
-          background: glowAtTop
-            ? `linear-gradient(to bottom, ${glowColor}55 0%, transparent 100%)`
-            : `linear-gradient(to top, ${glowColor}55 0%, transparent 100%)`,
-          pointerEvents: 'none',
-        }} />
-      )}
+      {/* (glow overlay removed — flat bar is cleaner.) */}
 
       {/* Mid-rank tick: the "0" line. Slightly emphasised. */}
       <div style={{
@@ -126,22 +102,7 @@ export default function EvalBar({ evalCp, mate, result, loading }) {
         pointerEvents: 'none',
       }} />
 
-      {/* Decile ticks — faint markers at every 10% from 10% to 90%
-          (excluding 50% which is already drawn above). */}
-      {[10, 20, 30, 40, 60, 70, 80, 90].map(t => {
-        const onWhite = t >= 100 - percentage;
-        return (
-          <div key={t} style={{
-            position: 'absolute',
-            top: `${t}%`,
-            left: '40%',
-            right: '40%',
-            height: '1px',
-            backgroundColor: onWhite ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)',
-            pointerEvents: 'none',
-          }} />
-        );
-      })}
+      {/* (decile ticks removed — too busy on a flat bar.) */}
 
       {/* Numeric label inside the bar, on the loser's side. Now bigger
           and bolder to fit the 36px-wide bar. */}

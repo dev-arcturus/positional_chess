@@ -71,6 +71,9 @@ function ScoreBar({ label, value, max }) {
           transition: 'width 250ms ease-out',
         }} />
       </div>
+      {/* Only show the magnitude with a `+`; the bar's fill direction
+          already encodes which side leads, so the sign is redundant
+          (and the user explicitly didn't want minus signs). */}
       <span style={{
         width: '34px',
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -80,7 +83,7 @@ function ScoreBar({ label, value, max }) {
         textAlign: 'right',
         letterSpacing: '-0.02em',
       }}>
-        {value > 0 ? '+' : ''}{(value / 100).toFixed(2)}
+        {Math.abs(value) >= 1 ? `+${(Math.abs(value) / 100).toFixed(2)}` : '0.00'}
       </span>
     </div>
   );
@@ -175,6 +178,42 @@ export default function PositionQualityBars({ explanation }) {
             {attack.moves_targeting_king}/{attack.total_moves}
           </span>
         </div>
+      )}
+
+      {/* GM-style narrative: a structured, multi-paragraph synthesis of
+          the entire blob. This is the LLM-ready handoff — every claim is
+          grounded in the structured blob above so an LLM can verify and
+          embellish without inventing facts. */}
+      {explanation.summary_text && (
+        <details style={{
+          marginTop: '6px',
+          paddingTop: '6px',
+          borderTop: '1px dashed #27272a',
+        }}>
+          <summary style={{
+            cursor: 'pointer',
+            fontSize: '10px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            color: '#71717a',
+            fontWeight: 700,
+            outline: 'none',
+            userSelect: 'none',
+            paddingBottom: '6px',
+          }}>
+            Position summary
+          </summary>
+          <div style={{
+            fontSize: '11px',
+            color: '#d4d4d8',
+            lineHeight: 1.55,
+            whiteSpace: 'pre-wrap',
+            maxHeight: '220px',
+            overflowY: 'auto',
+          }} className="thin-scroll">
+            {explanation.summary_text}
+          </div>
+        </details>
       )}
 
       {/* Principal-plan one-liner. Engine-derived. */}

@@ -126,18 +126,20 @@ export default function CapturedStrip({ fen, side }) {
         ))}
       </div>
 
-      {own !== 0 && (
+      {/* Only the side that is AHEAD shows the +N pill. The side that
+          is behind says nothing — no minus sign needed. */}
+      {own > 0 && (
         <span style={{
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontWeight: 700,
           fontSize: '11px',
           padding: '3px 8px',
           borderRadius: '999px',
-          backgroundColor: own > 0 ? 'rgba(74,222,128,0.10)' : 'rgba(248,113,113,0.10)',
-          color: own > 0 ? '#86efac' : '#fca5a5',
-          border: '1px solid ' + (own > 0 ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)'),
+          backgroundColor: 'rgba(74,222,128,0.10)',
+          color: '#86efac',
+          border: '1px solid rgba(74,222,128,0.25)',
         }}>
-          {own > 0 ? '+' : ''}{own}
+          +{own}
         </span>
       )}
     </div>

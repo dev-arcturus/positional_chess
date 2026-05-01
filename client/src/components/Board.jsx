@@ -8,6 +8,7 @@ import {
 import EvalBar from './EvalBar';
 import CapturedStrip from './CapturedStrip';
 import PositionQualityBars from './PositionQualityBars';
+import QualityIcon from './QualityIcon';
 import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
 import { buildFullExplanation } from '../engine/full-explanation';
 import {
@@ -1255,13 +1256,15 @@ export default function Board() {
               {sideToMove === 'w' ? 'White' : 'Black'}
             </span>
             {Math.abs(materialDelta) >= 0.1 && (
+              // Only show the pill on the side that's AHEAD — title labels
+              // it explicitly. No minus signs.
               <span
                 className="status-pill"
-                data-tone={materialDelta > 0 ? 'up' : 'down'}
+                data-tone="up"
                 title={materialDelta > 0 ? 'White is up material' : 'Black is up material'}
                 style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
               >
-                {materialDelta > 0 ? '+' : ''}{materialDelta.toFixed(1)}
+                {materialDelta > 0 ? 'White' : 'Black'} +{Math.abs(materialDelta).toFixed(1)}
               </span>
             )}
             <span className="status-pill" data-tone="muted" title="Game phase">
@@ -1367,25 +1370,21 @@ export default function Board() {
                   letterSpacing: '-0.02em',
                 }}>
                   {lastMoveAnalysis.san}
-                  {!lastMoveAnalysis.loading && getQualitySymbol(lastMoveAnalysis.quality) && (
+                  {!lastMoveAnalysis.loading && lastMoveAnalysis.quality && (
                     <span style={{
                       marginLeft: '8px',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      width: '22px',
-                      height: '22px',
+                      width: '24px',
+                      height: '24px',
                       borderRadius: '50%',
                       backgroundColor: getQualityColor(lastMoveAnalysis.quality),
                       color: '#09090b',
-                      fontSize: '13px',
-                      fontWeight: 900,
-                      letterSpacing: '-0.04em',
-                      lineHeight: 1,
                       verticalAlign: 'middle',
-                      boxShadow: `0 0 0 1px ${getQualityColor(lastMoveAnalysis.quality)}40`,
+                      boxShadow: `0 0 0 1px ${getQualityColor(lastMoveAnalysis.quality)}55`,
                     }}>
-                      {getQualitySymbol(lastMoveAnalysis.quality)}
+                      <QualityIcon quality={lastMoveAnalysis.quality} size={16} />
                     </span>
                   )}
                 </span>
