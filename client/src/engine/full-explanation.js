@@ -222,11 +222,10 @@ function composeNarrative(blob) {
   const lines = [];
   const stm = blob.side_to_move; // "white" / "black"
   const evalCp = blob.eval_cp;
-  const verdict = blob.verdict || '';
 
-  // ── 1. Verdict opening ─────────────────────────────────────────────
+  // ── 1. Verdict opening — read like a game annotator ────────────────
   if (Math.abs(evalCp) < 25) {
-    lines.push("The position is roughly equal.");
+    lines.push(`The position is roughly equal. ${cap(stm)} to move.`);
   } else {
     const side = evalCp > 0 ? "White" : "Black";
     const mag = Math.abs(evalCp);
@@ -234,7 +233,11 @@ function composeNarrative(blob) {
               : mag < 200 ? "a clear edge"
               : mag < 500 ? "a winning advantage"
               : "a decisive advantage";
-    lines.push(`${side} has ${adj} of ${pawns(mag)} (engine eval ${evalCp > 0 ? '+' : ''}${pawns(evalCp)}). ${cap(stm)} to move.`);
+    // Pair the magnitude verdict with the move-number context for grounding.
+    const moveCtx = blob.move_number ? `Move ${blob.move_number}` : '';
+    const phaseCtx = blob.phase ? `; ${blob.phase}` : '';
+    const ctx = (moveCtx || phaseCtx) ? ` ${moveCtx}${phaseCtx}.` : '';
+    lines.push(`${side} has ${adj} of ${pawns(mag)} (engine eval ${evalCp > 0 ? '+' : ''}${pawns(evalCp)}). ${cap(stm)} to move.${ctx}`);
   }
 
   // ── 2. Leading factor + breakdown ──────────────────────────────────
