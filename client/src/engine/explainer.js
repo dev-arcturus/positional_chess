@@ -748,47 +748,19 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
       factors.push({ type: 'sacrifice', value_pawns: PIECE_VALUE[movingPiece.type] / 100 });
     }
 
-    // ───── Positional factors (PST / center / development / king attack) ─────
-    if (movingPiece.type !== 'k') {
-      const pstBefore = getPSTValue(movingPiece.type, from, movingPiece.color);
-      const pstAfter = getPSTValue(movingPiece.type, to, movingPiece.color);
-      const improvement = pstAfter - pstBefore;
-      if (improvement >= 15) {
-        explanations.push(`Improves the ${PIECE_NAME[movingPiece.type]}'s activity`);
-        factors.push({ type: 'activity', value_pawns: improvement / 100 });
-      } else if (improvement <= -15) {
-        explanations.push(
-          `The ${PIECE_NAME[movingPiece.type]} retreats to a passive square`
-        );
-        factors.push({ type: 'activity', value_pawns: improvement / 100 });
-      }
-    }
-    if (['d4', 'd5', 'e4', 'e5'].includes(to)) {
-      if (movingPiece.type === 'p') {
-        explanations.push('Stakes a claim in the center');
-        factors.push({ type: 'center_control', value_pawns: 0.3 });
-      } else if (movingPiece.type === 'n' || movingPiece.type === 'b') {
-        explanations.push('Centralizes a piece');
-        factors.push({ type: 'center_control', value_pawns: 0.2 });
-      }
-    }
-    const moveNum = chessBefore.moveNumber();
-    if (moveNum <= 12 && (movingPiece.type === 'n' || movingPiece.type === 'b')) {
-      const startRank = movingPiece.color === 'w' ? '1' : '8';
-      if (from[1] === startRank) {
-        explanations.push(`Develops the ${PIECE_NAME[movingPiece.type]}`);
-        factors.push({ type: 'development', value_pawns: 0.3 });
-      }
-    }
-    const oppKing = findKing(chessAfter, opponent);
-    if (oppKing && ['q', 'r', 'b', 'n'].includes(movingPiece.type)) {
-      const distBefore = squareDistance(from, oppKing);
-      const distAfter = squareDistance(to, oppKing);
-      if (distAfter < distBefore && distAfter <= 3) {
-        explanations.push("Increases pressure on the opponent's king");
-        factors.push({ type: 'king_attack', value_pawns: 0.3 });
-      }
-    }
+    // (The legacy positional explanations — "improves activity",
+    //  "retreats to a passive square", "stakes a claim in the center",
+    //  "centralizes a piece", "develops the X", "increases pressure
+    //  on the opponent's king" — were tell-not-show filler that got
+    //  spammed onto every move regardless of whether it was actually
+    //  the reason. They've been removed.
+    //
+    //  The Rust motif analyzer's concrete tagline ("Knight invades f5",
+    //  "Greek gift sacrifice — Bxh7+", "Trades into the endgame")
+    //  already covers this ground with WHO + WHERE + WHAT, so
+    //  the explainer's job here is now strictly classification +
+    //  win-rate math, not duplicate prose generation.)
+    void movingPiece; void from; void to; void opponent; void chessAfter; void chessBefore;
   }
 
   // Mate-in-N annotation.
