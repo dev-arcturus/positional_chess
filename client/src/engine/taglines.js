@@ -767,16 +767,11 @@ function quickExplainJs(fenBefore, moveUCI) {
   }
 
   // ── King-attack ──────────────────────────────────────────────────────────
-  if (!motifs.some(m => ['fork','pin','skewer','check','discovered_check','traps_piece'].includes(m))) {
-    const oppKing = findKing(M.chessAfter, M.opponentColor);
-    if (oppKing && ['q','r','b','n'].includes(M.movingPiece.type)) {
-      const distAfter = chebyshev(M.to, oppKing);
-      const distBefore = chebyshev(M.from, oppKing);
-      if (distAfter < distBefore && distAfter <= 3) {
-        add('attacks_king', "Increases pressure on the king");
-      }
-    }
-  }
+  // (Legacy "Increases pressure on the king" suppressed — it was the
+  //  same vague tell-don't-show phrase. The Rust attacks_king detector
+  //  now produces a concrete phrase like "Knight on f5 attacks 3
+  //  squares around the king (e7, g7, h6)"; this JS taglines layer is
+  //  a fallback-only path and shouldn't compete.)
 
   // Luft — back-rank king + 1-square pawn push next to it.
   if (isLuft(M.chessBefore, M.chessAfter, M.from, M.to, M.movingPiece, M.moverColor)) {

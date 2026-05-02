@@ -936,21 +936,53 @@ fn detect_defends_hanging(ctx: &Context, out: &mut Vec<Motif>) {
 
 // ── King attack ─────────────────────────────────────────────────────────
 
+/// Show, don't tell. Old phrase was "Increases pressure on the king" —
+/// vague filler that didn't say WHAT. Now we count exactly which 3×3
+/// king-zone squares the piece newly attacks and name them, plus the
+/// piece name. "Knight on f5 attacks 3 squares around the king
+/// (e7, g7, h6)" is concrete; the user can verify it on the board.
 fn detect_attacks_king(ctx: &Context, out: &mut Vec<Motif>) {
-    if out.iter().any(|m| ["fork","pin","skewer","check","discovered_check","traps_piece"].contains(&m.id.as_str())) {
+    if out.iter().any(|m| ["fork","pin","skewer","check","discovered_check","double_check","traps_piece"].contains(&m.id.as_str())) {
         return;
     }
     if !matches!(ctx.moved.role, Role::Queen | Role::Rook | Role::Bishop | Role::Knight) {
         return;
     }
-    let opp_king = match find_king(ctx.after.board(), ctx.opp) {
+    let board_a = ctx.after.board();
+    let board_b = ctx.before.board();
+    let opp_king = match find_king(board_a, ctx.opp) {
         Some(k) => k,
         None => return,
     };
     let dist_after = chebyshev(ctx.to, opp_king);
     let dist_before = chebyshev(ctx.from, opp_king);
-    if dist_after < dist_before && dist_after <= 3 {
-        push(out, "attacks_king", "Increases pressure on the king");
+    if dist_after >= dist_before || dist_after > 3 { return; }
+
+    // List the king-zone squares newly under attack.
+    let zone = king_zone(opp_king);
+    let before = attacks_from(board_b, ctx.from);
+    let after = attacks_from(board_a, ctx.to);
+    let newly: Vec<Square> = (after & zone & !before).into_iter().collect();
+    if newly.is_empty() { return; }
+
+    let n = newly.len();
+    let role = role_name(ctx.moved.role);
+    let phrase = if n == 1 {
+        format!("{} on {} now attacks {} (next to the king)",
+                cap_first(role), ctx.to, newly[0])
+    } else {
+        let list: Vec<String> = newly.iter().take(3).map(|s| s.to_string()).collect();
+        format!("{} on {} attacks {} square{} around the king ({})",
+                cap_first(role), ctx.to, n, if n == 1 { "" } else { "s" }, list.join(", "))
+    };
+    push(out, "attacks_king", phrase);
+}
+
+fn cap_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect(),
+        None => String::new(),
     }
 }
 
