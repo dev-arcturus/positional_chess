@@ -37,7 +37,9 @@ This is the kind of analysis cockpit you'd find on Lichess, scaled down to a sin
 - **70+ motif detectors** in Rust covering tactical patterns (fork / pin / skewer / discovered check / double check / Greek gift / Anastasia's mate / Boden's mate / Arabian-style mate / smothered-mate threat / back-rank mate threat / decisive combination), captures and trades (simplifies / trades-into-endgame / trades-when-behind / exchange sacrifice / piece trade / queen trade), pawn structure (IQP / hanging pawns / passed / supported / backward / isolated / colour-complex weakness / pawn breakthrough / pawn break / pawn lever / pawn storm), piece play (knight invasion / outpost / rook lift / battery / opens-file-for / opens-diagonal-for / fianchetto / long diagonal / rook on 7th / open + half-open files / doubles rooks), king attack (attacks king / eyes king zone / luft / pawn shield), strategic (loses castling / prophylaxis / multi-purpose / activates / centralises / develops / connects rooks).
 - **SEE-aware everywhere.** "Threatens the rook" only fires if Rxr would actually win material. "Attacks the h-pawn" only fires if defenders < 2 AND SEE ≥ 0. "Hangs the knight" only fires when material is *actually* losing — clean trades don't trigger it.
 - **Pattern-recognising tagline composer** (JS). Named patterns subsume their components: when `greek_gift` fires, the tagline is "Greek gift sacrifice — Bxh7+!", not the bare `sacrifice + check`. When `decisive_combination` fires, it's the headline. Pair-join with `phrasesOverlap()` deduplicates two phrases that mention the same role / file-pawn / square.
-- **14 Rust integration tests** (`engine-rs/tests/motif_assertions.rs`) lock in false-positive guards: balanced trades don't fire `hangs`, single zone-square attacks don't fire `eyes_king_zone`, opening minor moves use `develops` not `activates`, simplifies fires when ahead, trades-into-endgame in low-phase positions, etc.
+- **Two-tier validation suite** in `engine-rs/tests/`:
+  - `motif_assertions.rs` (14 integration tests) — lock in specific false-positive guards: balanced trades don't fire `hangs`, single zone-square attacks don't fire `eyes_king_zone`, opening minor moves use `develops` not `activates`, simplifies fires when ahead, trades-into-endgame in low-phase positions, etc.
+  - `precision_recall.rs` — labelled-position corpus harness. Each entry is `(fen, uci, must_fire[], must_not_fire[], description)`. The harness walks the corpus, computes per-motif precision and recall, prints a table, and fails CI if precision drops below 0.80 or recall below 0.70 on any motif with ≥3 corpus mentions. **This is the LLM Council's #1 finding put into code:** every new master concept has to land with corpus entries before it ships, so the analyzer's outputs are measured rather than asserted.
 
 ### Explanation blob (LLM-ready)
 
@@ -115,6 +117,7 @@ This is the kind of analysis cockpit you'd find on Lichess, scaled down to a sin
 │   ├─ src/see.rs           (Static Exchange Evaluation)
 │   ├─ src/util.rs          (square / file / colour helpers)
 │   ├─ tests/motif_assertions.rs (14 integration tests)
+│   ├─ tests/precision_recall.rs   (corpus harness, P/R thresholds)
 │   └─ build.sh             (wasm-pack + wasm-opt with bulk-memory +
 │                            nontrapping-float-to-int features)
 └────────────────────────────────────────────┘
@@ -138,7 +141,7 @@ Everything happens in the browser. The Stockfish Worker runs the search; the mai
 | Rust crates                  | `shakmaty` (chess rules), `wasm-bindgen` + `serde-wasm-bindgen` + `serde_json` (FFI), `serde` (struct serialisation) |
 | Icons                        | `lucide-react` for UI controls; **inline SVG** for chess pieces (`ChessPieceIcon.jsx`) and move-quality glyphs (`QualityIcon.jsx`) so they render consistently across font fallbacks |
 | Build pipeline (Rust → WASM) | `wasm-pack build --release --target web`, post-processed by `wasm-opt -O3` with bulk-memory + nontrapping-float-to-int features enabled (see `engine-rs/build.sh`) |
-| Tests                        | `cargo test --release` against `engine-rs/tests/motif_assertions.rs` — 14 integration tests for the motif analyzer |
+| Tests                        | `cargo test --release` against `engine-rs/tests/` — 14 integration tests in `motif_assertions.rs` plus a precision/recall corpus harness in `precision_recall.rs` that gates per-motif accuracy |
 | Lint                         | ESLint 9 (flat config) for JS                                     |
 
 What is **not** in the stack:
@@ -203,7 +206,8 @@ What is **not** in the stack:
 │   │   ├── see.rs                                # Static Exchange Evaluation
 │   │   └── util.rs                               # Square / file / colour helpers
 │   ├── tests/
-│   │   └── motif_assertions.rs                   # 14 integration tests
+│   │   ├── motif_assertions.rs                   # 14 integration tests
+│   │   └── precision_recall.rs                   # corpus + P/R harness
 │   ├── build.sh                                  # wasm-pack + wasm-opt pipeline
 │   ├── Cargo.toml
 │   └── pkg/                                      # wasm-pack output (gitignored)
