@@ -1,33 +1,19 @@
 import React from 'react';
+import ChessPieceIcon from './ChessPieceIcon';
 
 // "Captured" strip drawn above (Black's captures) and below (White's
 // captures) the board. Each strip shows:
 //   • side label
-//   • Unicode glyphs of pieces that side has captured (in descending
+//   • SVG silhouettes of pieces that side has captured (in descending
 //     value, so the queen leads if there is one)
-//   • a +/- material-delta pill at the right
+//   • a +N material-delta pill (only on the side that's ahead)
 //
 // We compute captures from the *current* FEN by counting what's missing
 // from the starting army (8P, 2N, 2B, 2R, 1Q per side). This means the
 // strip works correctly mid-game without needing the move list.
-//
-// Promotions complicate this: a side with 9 pawns'-worth of pieces but
-// only 7 actual pawns will look weird. We bias the math correctly by
-// showing the **missing-from-start** glyphs of the *opposite* side
-// (because those are what the current side has captured). And for the
-// material delta we use the standard P=1 N=B=3 R=5 Q=9 sum.
-//
-// Props:
-//   fen        : current FEN (used to count remaining pieces).
-//   orientation: 'white' | 'black' — flips which strip is on top.
-//   side       : 'white' | 'black' — whose captures this instance shows.
 
 const STARTING_COUNTS = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 };
 const VALUES         = { p: 1, n: 3, b: 3, r: 5, q: 9 };
-const GLYPHS = {
-  white: { p: '♙', n: '♘', b: '♗', r: '♖', q: '♕', k: '♔' },
-  black: { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' },
-};
 
 function countPieces(fen) {
   // FEN piece-placement → counts per case (uppercase = white, lower = black).
@@ -103,26 +89,20 @@ export default function CapturedStrip({ fen, side }) {
         flex: 1,
         display: 'flex',
         alignItems: 'center',
-        gap: '2px',
+        gap: '1px',
         minHeight: '24px',
-        fontSize: '18px',
-        lineHeight: 1,
-        color: side === 'white' ? '#a1a1aa' : '#52525b',
-        // Each captured piece glyph belongs to the OPPONENT colour
-        // (these are pieces taken FROM them).
       }}>
         {captured.length === 0 && (
           <span style={{ fontSize: '11px', color: '#52525b' }}>—</span>
         )}
         {captured.map((c, i) => (
-          <span key={i} style={{
-            color: c.side === 'white' ? '#e4e4e7' : '#52525b',
-            opacity: 0.95,
-            // Squish glyphs so they read as a row, not a list.
-            marginRight: '-3px',
-          }}>
-            {GLYPHS[c.side][c.role]}
-          </span>
+          <ChessPieceIcon
+            key={i}
+            role={c.role}
+            color={c.side}
+            size={20}
+            style={{ marginRight: '-2px' }}
+          />
         ))}
       </div>
 

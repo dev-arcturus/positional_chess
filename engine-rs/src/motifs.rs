@@ -668,10 +668,17 @@ fn detect_threats_and_creates(ctx: &Context, out: &mut Vec<Motif>) {
     // Second branch — "Creates a threat": some OTHER enemy piece (not
     // necessarily attacked by us) is now hanging when it wasn't before.
     // SEE-aware via `hanging_loss`.
+    //
+    // We skip PAWN targets here. The more specific `attacks_pawn`
+    // detector — which has the file letter, "isolated"/"backward"
+    // adjective, and a stricter defender-count check — will fire on
+    // the same square with a clearer tagline. Saying both
+    // "Creates a threat on the pawn" AND "Attacks the h-pawn" was
+    // textbook redundancy; this dedupes it.
     let board_b = ctx.before.board();
     for sq in board.by_color(ctx.opp) {
         let p = board.piece_at(sq).unwrap();
-        if p.role == Role::King { continue; }
+        if p.role == Role::King || p.role == Role::Pawn { continue; }
         let was_hanging = hanging_loss(board_b, sq).is_some();
         let is_hanging = hanging_loss(board, sq).is_some();
         if !was_hanging && is_hanging {
@@ -1239,6 +1246,10 @@ fn detect_outpost(ctx: &Context, out: &mut Vec<Motif>) {
     if !matches!(ctx.moved.role, Role::Knight | Role::Bishop) {
         return;
     }
+    // `knight_invasion` is the deeper, more specific case of outpost.
+    // If it already fired we'd otherwise emit BOTH "Knight invades f5"
+    // AND "Establishes an outpost on f5" — say one thing, not two.
+    if out.iter().any(|m| m.id == "knight_invasion") { return; }
     let board = ctx.after.board();
     if !is_outpost(board, ctx.to, ctx.moved) {
         return;
@@ -1504,6 +1515,15 @@ fn detect_centralizes(ctx: &Context, out: &mut Vec<Motif>) {
     if !matches!(ctx.moved.role, Role::Knight | Role::Bishop | Role::Queen | Role::Rook | Role::Pawn) {
         return;
     }
+    // If a more specific motif already described where the piece landed
+    // — outpost, knight invasion, fianchetto, long-diagonal — saying
+    // "Centralizes the piece" on top of it is just redundant. Suppress.
+    if out.iter().any(|m| matches!(m.id.as_str(),
+        "outpost" | "knight_invasion" | "fianchetto" | "long_diagonal" | "rook_seventh"
+        | "rook_lift" | "open_file" | "semi_open_file"
+    )) {
+        return;
+    }
     // Only fire on actual central destination — not on attack-set deltas.
     let core4 = matches!(ctx.to, Square::D4 | Square::D5 | Square::E4 | Square::E5);
     let pawn_central = matches!(ctx.to,
@@ -1560,6 +1580,13 @@ fn detect_attacks_pawn(ctx: &Context, out: &mut Vec<Motif>) {
         if p.role != Role::Pawn || p.color != ctx.opp {
             continue;
         }
+        // Defender count guard. A pawn with ≥2 defenders is a fortress;
+        // saying "attacks the h-pawn" when there are TWO defenders is the
+        // classic nonsense tagline. Skip those.
+        let defenders = board_a
+            .attacks_to(sq, ctx.opp, board_a.occupied())
+            .count();
+        if defenders >= 2 { continue; }
         // SEE-gate: would taking this pawn actually win material?
         let see_val = match see_capture(board_a, sq, ctx.mover) {
             Some(v) => v,
