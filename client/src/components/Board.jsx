@@ -6,14 +6,13 @@ import {
   Shuffle,
 } from 'lucide-react';
 import EvalBar from './EvalBar';
-import CapturedStrip from './CapturedStrip';
-import PositionQualityBars from './PositionQualityBars';
 import QualityIcon from './QualityIcon';
 import ChessPieceIcon from './ChessPieceIcon';
-import MoveCharacterCircle, { engineConsensus } from './MoveCharacter';
 import SettingsPanel from './SettingsPanel';
+import AboutPosition from './AboutPosition';
 import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
 import { buildFullExplanation } from '../engine/full-explanation';
+import { pickRandomPosition } from '../engine/positions';
 import {
   getTopMoves,
   explainMoveAt,
@@ -70,10 +69,12 @@ function colorForCp(cp, pieceType = 'q', calibration = 3) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-// Curated "plausible" positions — openings just out of theory, sharp
-// middlegames, and clean endgames. All are legal positions that
-// realistically occur in real games. Used by the Random button.
-const RANDOM_POSITIONS = [
+// (Random-position library now lives in `client/src/engine/positions.js`
+//  and includes Saavedra, Réti, Lucena, Philidor, Vancura, Kasparov–
+//  Topalov, Marshall–Capablanca, Polugaevsky–Nezhmetdinov, classic
+//  studies, and pawn-structure templates. Keep the previous inline
+//  list as a fallback in case positions.js fails to load.)
+const RANDOM_POSITIONS_FALLBACK = [
   // — Openings (just out of theory) —
   // Italian, Giuoco Pianissimo
   'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 4 4',
@@ -119,8 +120,10 @@ const RANDOM_POSITIONS = [
   '6k1/5ppp/8/8/8/2Q5/5PPP/4R1K1 w - - 0 1',
 ];
 
-function pickRandomPosition() {
-  return RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)];
+// Fallback retained for safety; preferred path goes through the imported
+// `pickRandomPosition` from positions.js.
+function pickRandomPositionFallback() {
+  return RANDOM_POSITIONS_FALLBACK[Math.floor(Math.random() * RANDOM_POSITIONS_FALLBACK.length)];
 }
 
 export default function Board() {
@@ -1022,17 +1025,16 @@ export default function Board() {
         width: '100%',
         maxWidth: '1080px',
       }}>
-        {/* LEFT: captured strips + eval bar + board, in a vertical column. */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {/* Top strip: shows the side at the top of the board. The
-              orientation prop flips this so it always matches the
-              physically-top side of the board. */}
-          <div style={{ width: `${36 + 4 + 600}px` }}>
-            <CapturedStrip
-              fen={fen}
-              side={orientation === 'white' ? 'black' : 'white'}
-            />
-          </div>
+        {/* LEFT: eval bar flush with the board.
+         *
+         * The captured-piece strips and position-quality bars panel were
+         * removed in the UI rethink: the eval bar's numeric label
+         * already tells the user "+0.7" — the strips and the six bipolar
+         * bars cluttered the visual without earning their place. The
+         * non-material decomposition of the eval lives in the right-rail
+         * "About this position" panel now, behind a one-line summary that
+         * the user can expand on demand.
+         */}
         <div style={{ display: 'flex', alignItems: 'stretch', gap: '4px' }}>
           <div style={{ width: '36px', height: '600px' }}>
             <EvalBar evalCp={evalCp} mate={evalMate} result={gameResult} loading={topMovesLoading} />
@@ -1152,21 +1154,6 @@ export default function Board() {
             )}
           </div>
         </div>
-          {/* Bottom strip: shows the side at the bottom of the board
-              (the player whose POV the orientation matches). */}
-          <div style={{ width: `${36 + 4 + 600}px` }}>
-            <CapturedStrip
-              fen={fen}
-              side={orientation}
-            />
-          </div>
-          {/* Position-quality bars — non-material decomposition of the
-              eval. Sits flush under the bottom captured strip so the
-              whole left column reads as a single analytical unit. */}
-          <div style={{ width: `${36 + 4 + 600}px` }}>
-            <PositionQualityBars explanation={posExplanation} />
-          </div>
-        </div>
 
         {/* RIGHT: analysis column */}
         <div className="analysis-panel thin-scroll" style={{
@@ -1251,47 +1238,45 @@ export default function Board() {
             }} />
           </div>
 
-          {/* Status row: side to move | material delta | phase | shift hint */}
+          {/* Compact status line — side to move + phase + material lead.
+              No coloured pills, no Shift-hint chip (Shift still works;
+              users discover it through the help/keyboard map, not a
+              constant on-screen reminder). Single inline run, restrained
+              colour. The dot indicates whose turn it is.
+          */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            padding: '8px 10px',
+            gap: '8px',
+            padding: '8px 14px',
             borderBottom: '1px solid #27272a',
-            flexWrap: 'wrap',
+            fontSize: '11px',
+            color: '#a1a1aa',
+            lineHeight: 1.5,
           }}>
-            <span className="status-pill" data-tone="active" title={sideToMove === 'w' ? "White's turn" : "Black's turn"}>
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%',
-                backgroundColor: sideToMove === 'w' ? '#fafafa' : '#27272a',
-                border: '1px solid ' + (sideToMove === 'w' ? '#fafafa' : '#52525b'),
-                display: 'inline-block',
-              }} />
-              {sideToMove === 'w' ? 'White' : 'Black'}
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              backgroundColor: sideToMove === 'w' ? '#fafafa' : '#27272a',
+              border: '1px solid ' + (sideToMove === 'w' ? '#fafafa' : '#52525b'),
+              display: 'inline-block',
+              flexShrink: 0,
+            }} />
+            <span style={{ color: '#d4d4d8', fontWeight: 500 }}>
+              {sideToMove === 'w' ? 'White' : 'Black'} to move
             </span>
+            <span style={{ color: '#3f3f46' }}>·</span>
+            <span style={{ textTransform: 'capitalize' }}>{phase}</span>
             {Math.abs(materialDelta) >= 0.1 && (
-              // Only show the pill on the side that's AHEAD — title labels
-              // it explicitly. No minus signs.
-              <span
-                className="status-pill"
-                data-tone="up"
-                title={materialDelta > 0 ? 'White is up material' : 'Black is up material'}
-                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
-              >
-                {materialDelta > 0 ? 'White' : 'Black'} +{Math.abs(materialDelta).toFixed(1)}
-              </span>
+              <>
+                <span style={{ color: '#3f3f46' }}>·</span>
+                <span style={{
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  color: '#86efac',
+                }}>
+                  {materialDelta > 0 ? 'White' : 'Black'} +{Math.abs(materialDelta).toFixed(1)}
+                </span>
+              </>
             )}
-            <span className="status-pill" data-tone="muted" title="Game phase">
-              {phase}
-            </span>
-            <div style={{ flex: 1 }} />
-            <span
-              className="status-pill"
-              data-tone={showHeatmap ? 'hint' : 'muted'}
-              title="Hold Shift to reveal piece values"
-            >
-              <kbd>⇧</kbd> Shift
-            </span>
           </div>
 
           {/* Opening name + mini move history with piece icons */}
@@ -1303,7 +1288,7 @@ export default function Board() {
               {openingName && (
                 <div style={{
                   fontSize: '11px',
-                  color: '#c4b5fd',
+                  color: '#d4d4d8',
                   fontWeight: 600,
                   marginBottom: moveHistory.length > 1 ? '6px' : 0,
                   letterSpacing: '-0.01em',
@@ -1363,13 +1348,13 @@ export default function Board() {
             </div>
           )}
 
-          {/* Last move card */}
+          {/* Last move card — flat now; the quality icon already
+              earns its colour, no need for an indigo wash on the
+              container too. */}
           {lastMoveAnalysis && (
             <div style={{
               padding: '12px 14px',
               borderBottom: '1px solid #27272a',
-              backgroundImage: 'linear-gradient(180deg, rgba(99,102,241,0.06) 0%, transparent 100%)',
-              backgroundColor: 'rgba(15, 23, 42, 0.35)',
             }}>
               <div style={{
                 fontSize: '9px',
@@ -1480,58 +1465,17 @@ export default function Board() {
             </div>
           )}
 
-          {/* Top-moves SUMMARY HEADER: a row of character-circles + the
-              engine-consensus one-liner. Always visible above the
-              scrollable details list. */}
-          {topMoves.length > 0 && !topMovesLoading && (
-            <div style={{
-              padding: '10px 12px 8px',
-              borderBottom: '1px solid #27272a',
-              backgroundImage: 'linear-gradient(180deg, rgba(99,102,241,0.04) 0%, transparent 100%)',
-            }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'baseline',
-                marginBottom: '6px',
-              }}>
-                <span style={{
-                  fontSize: '9px',
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  fontWeight: 700,
-                  color: '#71717a',
-                }}>
-                  Top {topMoves.length} engine moves
-                </span>
-                {(() => {
-                  const consensus = engineConsensus(topMoves);
-                  return consensus ? (
-                    <span style={{ fontSize: '11px', color: '#d4d4d8', textAlign: 'right', flex: 1, marginLeft: '8px' }}>
-                      {consensus}
-                    </span>
-                  ) : null;
-                })()}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {topMoves.map((m, idx) => (
-                  <MoveCharacterCircle
-                    key={`${m.rank}-${idx}`}
-                    motifIds={m.motifs || []}
-                    san={m.san}
-                    rank={m.rank}
-                    selected={selectedMoveIndex === idx}
-                    onClick={() => handleMoveClick(m, idx)}
-                    size={30}
-                  />
-                ))}
-              </div>
-              {/* (`recaptureWisdom` UI hook removed — that kind of
-                  "why X over Y" reasoning belongs in the motif system
-                  and narrative composer, applied uniformly to every
-                  position, not as a bespoke widget.) */}
-            </div>
-          )}
+          {/* The character-circles row was removed in the UI rethink:
+              the icons inside the moves list itself convey the same
+              information, and a parallel row of bigger circles on top
+              created visual duplication. The engine-consensus one-
+              liner moves to the AboutPosition panel, where it sits
+              alongside the position summary. */}
+
+          {/* About this position — collapsed-by-default summary. The
+              user can expand to see the full structured blob: per-head
+              eval breakdown, themes, plan, narrative. */}
+          <AboutPosition explanation={posExplanation} />
 
           {/* Top moves list (scrollable, full details) */}
           <div className="thin-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>

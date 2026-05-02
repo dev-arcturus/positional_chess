@@ -99,10 +99,9 @@ body {
 .thin-scroll::-webkit-scrollbar-thumb { background-color: #3f3f46; border-radius: 3px; }
 .thin-scroll::-webkit-scrollbar-track { background-color: transparent; }
 
-/* Right-column root: subtle gradient + outer glow so it reads as a
-   separate analytical surface, not a flat block. */
+/* Right-column root: flat surface, just a 1px border to delineate from
+   the page background. Removed the gradient + drop shadow — they were
+   decorative weight without earning their place. */
 .analysis-panel {
-  background-image: linear-gradient(180deg, #1a1a1d 0%, #131316 100%);
-  box-shadow: 0 1px 0 0 rgba(255,255,255,0.04) inset,
-              0 20px 40px -20px rgba(0,0,0,0.5);
+  background-color: #131316;
 }
