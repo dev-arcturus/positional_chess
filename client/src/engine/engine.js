@@ -3,8 +3,37 @@
 // Same public API as the (now-deprecated) server engine: evaluate / analyzeMultiPV / getBestMove.
 
 const WORKER_URL = '/stockfish/stockfish-18-lite-single.js';
-const DEFAULT_DEPTH = 12;
-const DEFAULT_JOB_TIMEOUT_MS = 15_000;
+
+// Configurable defaults backed by localStorage. The UI's settings
+// panel writes to these so the engine layer reflects user preference
+// without each call-site having to thread depth through.
+function readPref(key, fallback, min, max) {
+  try {
+    const raw = localStorage.getItem(`positional_chess.${key}`);
+    if (!raw) return fallback;
+    const v = parseInt(raw, 10);
+    if (Number.isFinite(v) && v >= min && v <= max) return v;
+  } catch { /* localStorage unavailable */ }
+  return fallback;
+}
+let DEFAULT_DEPTH = readPref('depth', 12, 6, 22);
+let DEFAULT_MULTIPV = readPref('multipv', 5, 1, 10);
+
+export function setEngineDefaults({ depth, multipv } = {}) {
+  if (Number.isFinite(depth)) {
+    DEFAULT_DEPTH = Math.max(6, Math.min(22, depth));
+    try { localStorage.setItem('positional_chess.depth', String(DEFAULT_DEPTH)); } catch { /* ignore */ }
+  }
+  if (Number.isFinite(multipv)) {
+    DEFAULT_MULTIPV = Math.max(1, Math.min(10, multipv));
+    try { localStorage.setItem('positional_chess.multipv', String(DEFAULT_MULTIPV)); } catch { /* ignore */ }
+  }
+}
+export function getEngineDefaults() {
+  return { depth: DEFAULT_DEPTH, multipv: DEFAULT_MULTIPV };
+}
+
+const DEFAULT_JOB_TIMEOUT_MS = 30_000;
 const DEFAULT_INIT_TIMEOUT_MS = 15_000;
 const DEFAULT_CACHE_SIZE = 500;
 
@@ -164,7 +193,7 @@ class StockfishEngine {
     });
   }
 
-  analyzeMultiPV(fen, numLines = 5, depth = DEFAULT_DEPTH) {
+  analyzeMultiPV(fen, numLines = DEFAULT_MULTIPV, depth = DEFAULT_DEPTH) {
     const n = Math.max(1, Math.min(numLines, 10));
     const key = `m|${fen}|${n}|${depth}`;
     const hit = this.cache.get(key);

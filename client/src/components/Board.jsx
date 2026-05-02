@@ -10,6 +10,8 @@ import CapturedStrip from './CapturedStrip';
 import PositionQualityBars from './PositionQualityBars';
 import QualityIcon from './QualityIcon';
 import ChessPieceIcon from './ChessPieceIcon';
+import MoveCharacterCircle, { engineConsensus, recaptureWisdom } from './MoveCharacter';
+import SettingsPanel from './SettingsPanel';
 import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
 import { buildFullExplanation } from '../engine/full-explanation';
 import {
@@ -1240,6 +1242,13 @@ export default function Board() {
             }}>
               <RotateCcw size={14} />
             </button>
+            <SettingsPanel onChange={() => {
+              // After settings change, force a re-fetch by clearing
+              // the cached "last fen" so analysis re-runs with new
+              // depth / multi-PV.
+              lastFetchedFen.current = '';
+              setFen(prev => prev); // trigger re-render and re-effect
+            }} />
           </div>
 
           {/* Status row: side to move | material delta | phase | shift hint */}
@@ -1471,8 +1480,87 @@ export default function Board() {
             </div>
           )}
 
-          {/* Top moves list (scrollable) */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+          {/* Top-moves SUMMARY HEADER: a row of character-circles + the
+              engine-consensus one-liner. Always visible above the
+              scrollable details list. */}
+          {topMoves.length > 0 && !topMovesLoading && (
+            <div style={{
+              padding: '10px 12px 8px',
+              borderBottom: '1px solid #27272a',
+              backgroundImage: 'linear-gradient(180deg, rgba(99,102,241,0.04) 0%, transparent 100%)',
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                marginBottom: '6px',
+              }}>
+                <span style={{
+                  fontSize: '9px',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                  color: '#71717a',
+                }}>
+                  Top {topMoves.length} engine moves
+                </span>
+                {(() => {
+                  const consensus = engineConsensus(topMoves);
+                  return consensus ? (
+                    <span style={{ fontSize: '11px', color: '#d4d4d8', textAlign: 'right', flex: 1, marginLeft: '8px' }}>
+                      {consensus}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {topMoves.map((m, idx) => (
+                  <MoveCharacterCircle
+                    key={`${m.rank}-${idx}`}
+                    motifIds={m.motifs || []}
+                    san={m.san}
+                    rank={m.rank}
+                    selected={selectedMoveIndex === idx}
+                    onClick={() => handleMoveClick(m, idx)}
+                    size={30}
+                  />
+                ))}
+              </div>
+              {/* Recapture wisdom: if top-2 are both captures of the same
+                  square, surface a one-liner about why one is preferred. */}
+              {(() => {
+                const wisdom = recaptureWisdom(topMoves);
+                return wisdom ? (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '6px 10px',
+                    fontSize: '11px',
+                    color: '#d4d4d8',
+                    backgroundColor: 'rgba(99,102,241,0.07)',
+                    border: '1px solid rgba(99,102,241,0.20)',
+                    borderRadius: '6px',
+                    lineHeight: 1.45,
+                  }}>
+                    <span style={{
+                      fontWeight: 700,
+                      color: '#a5b4fc',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    }}>{wisdom.sanA}</span>
+                    <span style={{ color: '#71717a' }}> over </span>
+                    <span style={{
+                      color: '#a1a1aa',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    }}>{wisdom.sanB}</span>
+                    <span style={{ color: '#71717a' }}>: </span>
+                    {wisdom.reason}
+                  </div>
+                ) : null;
+              })()}
+            </div>
+          )}
+
+          {/* Top moves list (scrollable, full details) */}
+          <div className="thin-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
             {topMovesLoading ? (
               <div style={{ textAlign: 'center', padding: '20px', color: '#71717a', fontSize: '12px' }}>
                 Analyzing…
