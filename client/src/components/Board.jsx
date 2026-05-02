@@ -13,6 +13,7 @@ import AboutPosition from './AboutPosition';
 import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
 import { buildFullExplanation } from '../engine/full-explanation';
 import { pickRandomPosition } from '../engine/positions';
+import { topConsequenceLine } from '../engine/connectors';
 import {
   getTopMoves,
   explainMoveAt,
@@ -160,33 +161,56 @@ export default function Board() {
   //
   // Rolled out in two waves so the UI never has to wait on engine
   // analysis to render *something*:
-  //   1. **Static layer** — the Rust analyzer's `explainPosition(fen)`.
-  //      Returns within ~1ms.  Sets `posExplanation` immediately so
-  //      the position-quality bars draw.
+  //   1. **Static layer** — `explainPosition(fen)`, returns ~1ms.
+  //      Sets `posExplanation` immediately so the AboutPosition
+  //      panel draws.
   //   2. **Engine-augmented layer** — `buildFullExplanation(fen)` runs
   //      Stockfish multi-PV in the background and overlays
   //      `engine_attack_potential`, `principal_plan`, and engine-derived
   //      themes on top of the static blob. Replaces `posExplanation`
   //      when ready (typically within 1-2 seconds).
   //
-  // Both fetches are cancellable: a new `fen` aborts the previous
-  // pending engine call so we don't show stale plans.
+  // We *also* keep the previous-position blob (`prevPosExplanation`)
+  // so the consequence-connectors module can diff before/after across
+  // the played move. That diff is what lets us say "trading queens
+  // quenches Black's attack" or "Castles, but White's king is now on
+  // an open file" — second-order effects only visible when you
+  // compare two snapshots, not in either alone.
   const [posExplanation, setPosExplanation] = useState(null);
+  const [prevPosExplanation, setPrevPosExplanation] = useState(null);
   React.useEffect(() => {
     if (!wasmIsReady() || !fen) return;
     let cancelled = false;
+    // Capture the current (about-to-become-previous) blob BEFORE we
+    // overwrite it with the new fen's blob. The lambda runs inside
+    // the same effect tick so React's batching keeps this consistent.
+    setPrevPosExplanation(prev => posExplanation || prev);
     const handle = setTimeout(() => {
       if (cancelled) return;
-      // Fast path: static blob.
+      // Fast path.
       const staticE = explainPosition(fen);
       if (!cancelled && staticE) setPosExplanation(staticE);
-      // Slow path: engine-augmented.
+      // Slow path.
       buildFullExplanation(fen).then(full => {
         if (!cancelled && full) setPosExplanation(full);
-      }).catch(() => { /* ignore — static is sufficient */ });
+      }).catch(() => { /* static is enough */ });
     }, 0);
     return () => { cancelled = true; clearTimeout(handle); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fen]);
+
+  // Consequence string for the played move. Comes from connectors.js
+  // diffing `prevPosExplanation` against `posExplanation`. Suppressed
+  // when either is missing (initial position, etc.).
+  const lastMoveConsequence = React.useMemo(() => {
+    if (!prevPosExplanation || !posExplanation || !lastMoveAnalysis) return null;
+    if (lastMoveAnalysis.loading) return null;
+    return topConsequenceLine(prevPosExplanation, posExplanation, {
+      movingSide: prevPosExplanation.side_to_move,
+      motifs: lastMoveAnalysis.motifs || [],
+      evalSwingCp: (posExplanation.eval_cp || 0) - (prevPosExplanation.eval_cp || 0),
+    });
+  }, [prevPosExplanation, posExplanation, lastMoveAnalysis]);
 
   // Click-to-select with legal-move indicators (also set during drag).
   const [selectedSquare, setSelectedSquare] = useState(null);
@@ -1441,6 +1465,32 @@ export default function Board() {
               {!lastMoveAnalysis.loading && lastMoveAnalysis.details && (
                 <div style={{ fontSize: '11px', color: '#a1a1aa', lineHeight: 1.4 }}>
                   {lastMoveAnalysis.details}
+                </div>
+              )}
+              {/* Consequence line — what the move enabled / damaged /
+                  prevented, derived by diffing the structured blob
+                  before vs after across king safety, pawn structure,
+                  activity, line control, hanging pieces, etc. */}
+              {!lastMoveAnalysis.loading && lastMoveConsequence && (
+                <div style={{
+                  marginTop: '6px',
+                  paddingTop: '6px',
+                  borderTop: '1px solid #27272a',
+                  fontSize: '11px',
+                  color: '#d4d4d8',
+                  lineHeight: 1.45,
+                }}>
+                  <span style={{
+                    color: '#52525b',
+                    fontSize: '9px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    fontWeight: 700,
+                    marginRight: '6px',
+                  }}>
+                    Consequence
+                  </span>
+                  {lastMoveConsequence}
                 </div>
               )}
               {!lastMoveAnalysis.loading && lastMoveAnalysis.bestMoveSan && !lastMoveAnalysis.isBestMove && (
