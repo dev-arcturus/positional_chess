@@ -1,4 +1,5 @@
 import React from 'react';
+import Tooltip from './Tooltip';
 
 // Position-strength bars across the heads of the static evaluator —
 // space, piece activity, king safety, structure, threats, line control.
@@ -11,26 +12,33 @@ import React from 'react';
 // strongly favours white." We map directly from the explanation blob's
 // per-head deltas (white − black) and rescale.
 //
+// Hovering each label reveals a custom Tooltip explaining what that
+// metric measures — useful for users who don't already know the lingo
+// ("PSQT? mobility?  what's that mean?").
+//
 // Props:
 //   explanation : the result of `explainPosition(fen)` — see
 //                 engine-rs/src/explanation.rs::Explanation.
 
 const HEAD_LABELS = [
-  // [key in eval_breakdown, display label, scale (cp → 0..100)]
-  // The scale is "what counts as a definitive lead in this category" —
-  // anything past it pegs at ±100. Tuned by eyeballing typical game
-  // positions in the analyzer.
-  ['psqt_cp',        'Activity',     150],
-  ['mobility_cp',    'Mobility',     150],
-  ['king_safety_cp', 'King safety',  120],
-  ['threats_cp',     'Threats',       80],
-  ['pawns_cp',       'Structure',    100],
-  ['imbalance_cp',   'Imbalance',     60],
+  // [key, display label, scale (cp → ±100), tooltip body]
+  ['psqt_cp', 'Activity', 150,
+    'Piece-square-table score. Each piece type scores higher on its ideal squares — knights in the centre, rooks on open files, bishops on long diagonals, kings safe behind pawns in middlegame and active in endgame. A high reading here means your pieces are well-placed, not that they have lots of moves (that\'s mobility).'],
+  ['mobility_cp', 'Mobility', 150,
+    'How many safe squares your minor and major pieces collectively attack. More mobility means more flexibility — you have more good moves available, and your pieces are not bottled up. A side with poor mobility is "cramped".'],
+  ['king_safety_cp', 'King safety', 120,
+    'Pawn shield integrity, attackers in the king zone, open and half-open files toward your king, weak diagonals. Negative for the side with the more exposed king. The engine\'s "easy to attack" signal (when active) augments this.'],
+  ['threats_cp', 'Threats', 80,
+    'Active threats one side has against the other\'s pieces — pieces under attack by lower-value attackers (knights and bishops attacking rooks, etc.), hanging pieces, undefended pieces in striking range.'],
+  ['pawns_cp', 'Structure', 100,
+    'Pawn-structure quality: islands, doubled pawns, isolated pawns, backward pawns, passed pawns, supported pawns. Negative for the side with structural weaknesses; positive for the side with passers or healthy chains.'],
+  ['imbalance_cp', 'Imbalance', 60,
+    'Long-term piece-mix bonuses: bishop pair, opposite-coloured bishops (drawish in pure endings, sharp with attackers), knight-versus-bishop fits with the pawn structure.'],
 ];
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-function ScoreBar({ label, value, max }) {
+function ScoreBar({ label, value, max, tooltip }) {
   // value > 0 → white side; value < 0 → black side. Bar fills outward
   // from a center divider, in white or dark zinc.
   const pct = clamp(value / max, -1, 1);
@@ -38,12 +46,21 @@ function ScoreBar({ label, value, max }) {
   const isWhite = pct >= 0;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px' }}>
-      <span style={{
-        width: '78px',
-        color: '#a1a1aa',
-        fontWeight: 600,
-        letterSpacing: '0.02em',
-      }}>{label}</span>
+      <Tooltip placement="left" maxWidth={300} content={
+        <div>
+          <div style={{ fontWeight: 700, marginBottom: '4px', color: '#fafafa' }}>{label}</div>
+          <div style={{ color: '#d4d4d8' }}>{tooltip}</div>
+        </div>
+      }>
+        <span style={{
+          width: '78px',
+          color: '#a1a1aa',
+          fontWeight: 600,
+          letterSpacing: '0.02em',
+          cursor: 'help',
+          borderBottom: '1px dotted #3f3f46',
+        }}>{label}</span>
+      </Tooltip>
       <div style={{
         position: 'relative',
         flex: 1,
@@ -125,8 +142,8 @@ export default function PositionQualityBars({ explanation }) {
           beyond material
         </span>
       </div>
-      {HEAD_LABELS.map(([key, label, scale]) => (
-        <ScoreBar key={key} label={label} value={eb[key] || 0} max={scale} />
+      {HEAD_LABELS.map(([key, label, scale, tooltip]) => (
+        <ScoreBar key={key} label={label} value={eb[key] || 0} max={scale} tooltip={tooltip} />
       ))}
 
       {/* Engine-driven attack potential — shows the side-to-move's
@@ -142,12 +159,26 @@ export default function PositionQualityBars({ explanation }) {
           display: 'flex', alignItems: 'center', gap: '8px',
           fontSize: '11px',
         }}>
-          <span style={{
-            width: '78px',
-            color: '#a1a1aa',
-            fontWeight: 600,
-            letterSpacing: '0.02em',
-          }}>Attack potential</span>
+          <Tooltip placement="left" maxWidth={320} content={
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: '4px', color: '#fafafa' }}>Attack potential</div>
+              <div style={{ color: '#d4d4d8' }}>
+                Engine-driven measure of how easily the side-to-move can generate an attack on the enemy king.
+                Computed by running Stockfish multi-PV (top-5 lines) and counting how many of those moves
+                target the king zone — via checks, attacks-king motifs, sacrifices, or tactical patterns
+                like Greek gift / Anastasia's. Bar fills as the ratio of king-targeting moves grows.
+              </div>
+            </div>
+          }>
+            <span style={{
+              width: '78px',
+              color: '#a1a1aa',
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+              cursor: 'help',
+              borderBottom: '1px dotted #3f3f46',
+            }}>Attack potential</span>
+          </Tooltip>
           <div style={{
             position: 'relative',
             flex: 1,

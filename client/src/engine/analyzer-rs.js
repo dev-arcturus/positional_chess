@@ -175,20 +175,56 @@ export function composeTagline(rustResult) {
   const visible = motifs.filter(m => m.phrase && m.phrase.length > 0);
 
   // ── 4. Single or pair fallback ────────────────────────────────────
+  // Before joining two phrases, we dedupe by *target keyword*. If both
+  // phrases mention the same role / file / square, the second one is
+  // re-stating what the first already said — drop it. This catches:
+  //   "Creates a threat on the pawn, attacks the h-pawn"
+  //   "Pins the knight to the queen, threatens the knight"
+  //   "Trades knights into the endgame, trades pieces" (etc.)
   let tagline;
   if (visible.length === 0) {
     tagline = '';
   } else if (visible.length === 1) {
     tagline = visible[0].phrase;
   } else {
-    // Pair: top 2 highest-priority phrases. Lowercase the second so it
-    // reads more naturally ("Pins the knight, threatens the rook").
     const a = visible[0].phrase;
-    const b = visible[1].phrase;
-    tagline = `${a}, ${b.charAt(0).toLowerCase()}${b.slice(1)}`;
+    const b = visible[1] ? visible[1].phrase : '';
+    if (!b || phrasesOverlap(a, b)) {
+      tagline = a;
+    } else {
+      tagline = `${a}, ${b.charAt(0).toLowerCase()}${b.slice(1)}`;
+    }
   }
 
   return out(rustResult, motifIds, tagline);
+}
+
+// Two phrases "overlap" if they mention the same key noun — role, file,
+// square, or piece. Used to suppress redundant secondary motifs in the
+// pair-join fallback.
+const KEY_TOKENS = [
+  'queen', 'rook', 'bishop', 'knight', 'pawn',
+  'king',
+  // file-pawns: "h-pawn", "a-pawn" etc — handled by simple substring match
+];
+function phrasesOverlap(a, b) {
+  const la = a.toLowerCase();
+  const lb = b.toLowerCase();
+  // Same role keyword in both?
+  for (const tok of KEY_TOKENS) {
+    if (la.includes(tok) && lb.includes(tok)) return true;
+  }
+  // Same file-pawn keyword? "h-pawn" / "a-pawn" / etc.
+  for (let f = 0; f < 8; f++) {
+    const file = String.fromCharCode(97 + f);
+    const tag = `${file}-pawn`;
+    if (la.includes(tag) && lb.includes(tag)) return true;
+  }
+  // Same exact two-char square? Look for any aN-hN substring shared.
+  const sqA = la.match(/[a-h][1-8]/g) || [];
+  const sqB = lb.match(/[a-h][1-8]/g) || [];
+  for (const s of sqA) if (sqB.includes(s)) return true;
+  return false;
 }
 
 function out(rustResult, motifIds, tagline) {

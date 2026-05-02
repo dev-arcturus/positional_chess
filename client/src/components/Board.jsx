@@ -9,6 +9,7 @@ import EvalBar from './EvalBar';
 import CapturedStrip from './CapturedStrip';
 import PositionQualityBars from './PositionQualityBars';
 import QualityIcon from './QualityIcon';
+import ChessPieceIcon from './ChessPieceIcon';
 import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
 import { buildFullExplanation } from '../engine/full-explanation';
 import {
@@ -21,15 +22,19 @@ import { findOpeningFromHistory } from '../engine/openings';
 // Replace the leading piece letter in a SAN with the matching unicode chess
 // glyph (white pieces for white moves, black for black). Pawns are left as
 // algebraic ("e4", "exd5"). O-O / O-O-O are passed through unchanged.
+// Move-history rendering: strip the leading piece letter from SAN and
+// return the bare move suffix. The token component pairs this with a
+// `<ChessPieceIcon>` so the piece glyph renders consistently as SVG.
+//
+// Returns `{ piece: ?'k'|'q'|'r'|'b'|'n', rest }` — a render-friendly tuple.
 function sanWithPieces(san, isWhiteMove) {
-  if (!san) return san;
-  if (san.startsWith('O-')) return san;
+  if (!san) return { piece: null, rest: san || '' };
+  if (san.startsWith('O-')) return { piece: null, rest: san };
   const head = san[0];
-  const map = isWhiteMove
-    ? { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘' }
-    : { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞' };
-  if (map[head]) return map[head] + san.slice(1);
-  return san;
+  const PIECE_LETTERS = { K: 'k', Q: 'q', R: 'r', B: 'b', N: 'n' };
+  const piece = PIECE_LETTERS[head];
+  if (piece) return { piece, rest: san.slice(1) };
+  return { piece: null, rest: san };
 }
 
 // Standard piece values used to scale "how much should we worry about this
@@ -1312,6 +1317,7 @@ export default function Board() {
                     const isWhiteMove = i % 2 === 0;
                     const moveNum = Math.floor(i / 2) + 1;
                     const active = historyIndex === i + 1;
+                    const { piece, rest } = sanWithPieces(m.san, isWhiteMove);
                     return (
                       <span
                         key={i}
@@ -1324,11 +1330,22 @@ export default function Board() {
                           setInputFen(m.fen);
                         }}
                         style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2px',
                           color: active ? '#a5b4fc' : (isWhiteMove ? '#e4e4e7' : '#a1a1aa'),
                         }}
                       >
                         {isWhiteMove && <span style={{ color: '#52525b', marginRight: '3px' }}>{moveNum}.</span>}
-                        {sanWithPieces(m.san, isWhiteMove)}
+                        {piece && (
+                          <ChessPieceIcon
+                            role={piece}
+                            color={isWhiteMove ? 'white' : 'black'}
+                            size={14}
+                            style={{ marginRight: '1px' }}
+                          />
+                        )}
+                        <span>{rest}</span>
                       </span>
                     );
                   })}
