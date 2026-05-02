@@ -10,7 +10,7 @@ import CapturedStrip from './CapturedStrip';
 import PositionQualityBars from './PositionQualityBars';
 import QualityIcon from './QualityIcon';
 import ChessPieceIcon from './ChessPieceIcon';
-import MoveCharacterCircle, { engineConsensus, recaptureWisdom } from './MoveCharacter';
+import MoveCharacterCircle, { engineConsensus } from './MoveCharacter';
 import SettingsPanel from './SettingsPanel';
 import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
 import { buildFullExplanation } from '../engine/full-explanation';
@@ -1526,36 +1526,10 @@ export default function Board() {
                   />
                 ))}
               </div>
-              {/* Recapture wisdom: if top-2 are both captures of the same
-                  square, surface a one-liner about why one is preferred. */}
-              {(() => {
-                const wisdom = recaptureWisdom(topMoves);
-                return wisdom ? (
-                  <div style={{
-                    marginTop: '8px',
-                    padding: '6px 10px',
-                    fontSize: '11px',
-                    color: '#d4d4d8',
-                    backgroundColor: 'rgba(99,102,241,0.07)',
-                    border: '1px solid rgba(99,102,241,0.20)',
-                    borderRadius: '6px',
-                    lineHeight: 1.45,
-                  }}>
-                    <span style={{
-                      fontWeight: 700,
-                      color: '#a5b4fc',
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                    }}>{wisdom.sanA}</span>
-                    <span style={{ color: '#71717a' }}> over </span>
-                    <span style={{
-                      color: '#a1a1aa',
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                    }}>{wisdom.sanB}</span>
-                    <span style={{ color: '#71717a' }}>: </span>
-                    {wisdom.reason}
-                  </div>
-                ) : null;
-              })()}
+              {/* (`recaptureWisdom` UI hook removed — that kind of
+                  "why X over Y" reasoning belongs in the motif system
+                  and narrative composer, applied uniformly to every
+                  position, not as a bespoke widget.) */}
             </div>
           )}
 

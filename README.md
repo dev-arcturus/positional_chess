@@ -30,20 +30,38 @@ This is the kind of analysis cockpit you'd find on Lichess, scaled down to a sin
 
 ## Highlights
 
-- **Browser-side Stockfish 18 (lite, single-threaded WASM)** — depth 12–14 search, MultiPV up to 10, principal variation extraction. ~7 MB WASM, gzipped on the wire.
-- **No backend** — pure static deploy. Works offline once the WASM has been fetched once.
-- **Hold ⇧ Shift (or just start dragging) to reveal positional values.** The board stays clean by default; pressing Shift — or grabbing any piece — overlays a numeric badge on every piece showing its contextual worth (in pawns), color-interpolated by significance.
-- **Live "what-if" preview during drag.** Hover a piece over a legal destination — every label on the board updates to show how each piece's worth changes if you complete the move. Includes the opponent's pieces.
-- **Hanging-piece warnings.** Any piece whose cheapest attacker is less valuable than the piece itself gets a red inset border, so you never miss a loose piece.
-- **Best-move green ring.** When you pick up or click a piece and the engine's top recommendation starts on that square, the destination is outlined in green — instant "is this the move?" cue.
-- **Material balance + king safety + phase indicator** in the toolbar — quick reads on who's up material, who's exposed, and whether it's an opening / middlegame / endgame.
-- **Last-move card at the top of the analysis panel.** The move that got you to the current position is shown with its full classification (`brilliant` / `great` / `best` / `good` / `neutral` / `inaccuracy` / `mistake` / `blunder`), summary, details, and "better was X" alternative.
-- **Arrow-key navigation.** ←/↑ for previous position, →/↓ for next.
-- **Top moves panel with motif taglines.** Each candidate move comes with a short positional summary ("Develops the knight, threatens the bishop") generated locally without engine calls. Click a move and the next 2 plies of the engine's PV each get their own one-liner too.
-- **Move explainer** — Lichess-style win-rate sigmoid + tactical motif detection. `brilliant` requires top-1 engine choice + real (SEE-based) sacrifice + win-rate maintained.
-- **Click-to-select + drag-and-drop** with Lichess-style legal-move dots and capture rings. Dots also appear underneath a piece while it's being dragged.
-- **FEN load + history scrubber + Random button** with 20 curated plausible positions for demos.
-- **LRU cache** in-memory, keyed on `(fen, depth, multipv)` — scrolling back through your move history is instant after the first pass.
+### Engine + analysis
+
+- **Browser-side Stockfish 18 (lite, single-threaded WASM)** — configurable depth 6–22, MultiPV 1–10, principal variation extraction. ~7 MB engine WASM, ~150 KB analyzer WASM. No backend.
+- **Custom Rust+WASM static evaluator (HCE)** with PeSTO-tuned material + piece-square tables, mobility, pawn-structure, king-safety, threats, imbalance heads — phased between middlegame and endgame quanta. Drives the heatmap, hanging-piece detection, and the eval-breakdown bars below the board.
+- **70+ motif detectors** in Rust covering tactical patterns (fork / pin / skewer / discovered check / double check / Greek gift / Anastasia's mate / Boden's mate / Arabian-style mate / smothered-mate threat / back-rank mate threat / decisive combination), captures and trades (simplifies / trades-into-endgame / trades-when-behind / exchange sacrifice / piece trade / queen trade), pawn structure (IQP / hanging pawns / passed / supported / backward / isolated / colour-complex weakness / pawn breakthrough / pawn break / pawn lever / pawn storm), piece play (knight invasion / outpost / rook lift / battery / opens-file-for / opens-diagonal-for / fianchetto / long diagonal / rook on 7th / open + half-open files / doubles rooks), king attack (attacks king / eyes king zone / luft / pawn shield), strategic (loses castling / prophylaxis / multi-purpose / activates / centralises / develops / connects rooks).
+- **SEE-aware everywhere.** "Threatens the rook" only fires if Rxr would actually win material. "Attacks the h-pawn" only fires if defenders < 2 AND SEE ≥ 0. "Hangs the knight" only fires when material is *actually* losing — clean trades don't trigger it.
+- **Pattern-recognising tagline composer** (JS). Named patterns subsume their components: when `greek_gift` fires, the tagline is "Greek gift sacrifice — Bxh7+!", not the bare `sacrifice + check`. When `decisive_combination` fires, it's the headline. Pair-join with `phrasesOverlap()` deduplicates two phrases that mention the same role / file-pawn / square.
+- **14 Rust integration tests** (`engine-rs/tests/motif_assertions.rs`) lock in false-positive guards: balanced trades don't fire `hangs`, single zone-square attacks don't fire `eyes_king_zone`, opening minor moves use `develops` not `activates`, simplifies fires when ahead, trades-into-endgame in low-phase positions, etc.
+
+### Explanation blob (LLM-ready)
+
+- **Structured `ExplanationBlob`** — material / pawn-structure / king-safety / activity / line-control / immediate-tactics / themes / verdict / per-head eval breakdown. Returned by the new WASM export `explain_position(fen)`.
+- **Engine-augmented enrichment** (JS) — Stockfish multi-PV results are layered on top to add `engine_attack_potential` (king-attack signal from what fraction of top moves target the king zone) and `principal_plan` (engine's PV walked move-by-move with motifs, key squares, inferred theme).
+- **GM-style narrative** synthesised from the blob — verdict, leading factor, eval breakdown, material, king safety with engine attack potential, activity, pawn structure, line control, tactics, engine plan — every claim grounded in the structured blob so a downstream LLM can verify and embellish without inventing facts.
+- **Copy JSON** button beside the narrative copies the full blob (~10–30 KB) to the clipboard for pasting into ChatGPT / Claude / etc.
+
+### UI
+
+- **Two-column layout** with a 600 px board, 36 px eval bar flush with the board height (numeric label inside the bar on the loser's side), and a 400 px right-column analysis panel.
+- **Captured-pieces strips** above and below the board — render captured pieces as inline-SVG silhouettes (consistent across font fallbacks); only the leading side renders the `+N` material pill.
+- **Position-quality bars** below the board — bipolar bars for Activity, Mobility, King safety, Threats, Structure, Imbalance — decompose the *non-material* eval. Hover any label to see a custom tooltip explaining what that head measures.
+- **Engine-driven Attack potential bar** + **Engine plan section** below the quality bars — the principal variation rendered as SAN chips, key squares listed, theme one-liner.
+- **Top-moves summary header** above the scrollable details list:
+  - **Engine consensus** one-liner derived from the dominant motif kind across all top moves.
+  - **Quality circles row** — one circle per top move, coloured + iconographed by the move's dominant character (tactical / king attack / capture / positional / check / castling / defensive / promotion / structural / mate / quiet). Click to select; hover for tooltip with rank, SAN, motif IDs.
+- **Engine settings panel** (gear icon in toolbar) — sliders for search depth (6–22) and top-moves count (1–10), persisted to localStorage.
+- **Custom SVG move-quality icons** (brilliant / great / best / excellent / inaccuracy / mistake / blunder / missed-mate) replace inconsistently-rendering Unicode glyphs.
+- **Lichess-style move history** with piece icons, opening name lookup (~40 named openings), arrow-key + keyboard navigation.
+- **Hold ⇧ Shift (or start dragging) to reveal positional values.** Numeric badges on every piece showing its contextual worth (in pawns), colour-interpolated by significance.
+- **Live "what-if" preview during drag.** Each piece's worth updates to show how it'd change if you complete the move.
+- **Hanging-piece warnings + Best-move green ring + Material balance + king safety + phase indicator** in the toolbar.
+- **LRU cache** for engine results, keyed on `(fen, depth, multipv)` — scrolling history is instant after the first pass.
 
 ---
 
@@ -61,35 +79,72 @@ This is the kind of analysis cockpit you'd find on Lichess, scaled down to a sin
 ## Architecture
 
 ```
-┌───────────────────────────┐                     ┌──────────────────────────────┐
-│  React UI (main thread)   │ ───── postMessage ─▶│  Stockfish WASM (Worker)     │
-│  Board.jsx → analysis.js  │ ◀──── postMessage ──│  stockfish-18-lite-single    │
-│  - chess.js (rules)       │                     │  - UCI protocol              │
-│  - explainer.js (motifs)  │                     │  - depth-12/14 search        │
-│  - LRU cache              │                     │                              │
-└───────────────────────────┘                     └──────────────────────────────┘
+┌────────────────────────────────────────────┐                  ┌────────────────────────┐
+│  React UI (main thread)                    │ ── postMessage ▶ │  Stockfish WASM        │
+│  ───────────────────────────────           │ ◀── postMessage ─│  (Web Worker)          │
+│  Board.jsx                                 │                  │  stockfish-18-lite     │
+│   ├─ EvalBar.jsx                           │                  │  - UCI protocol        │
+│   ├─ CapturedStrip.jsx                     │                  │  - depth 6-22 (config) │
+│   ├─ PositionQualityBars.jsx               │                  │  - MultiPV 1-10        │
+│   ├─ MoveCharacter.jsx (circles)           │                  └────────────────────────┘
+│   ├─ SettingsPanel.jsx                     │                              ▲
+│   ├─ Tooltip.jsx                           │                              │
+│   ├─ ChessPieceIcon.jsx (SVG)              │                              │
+│   └─ QualityIcon.jsx (SVG)                 │                              │
+│                                            │                              │
+│  client/src/engine/  (analysis pipeline)   │                              │
+│   ├─ engine.js          (UCI worker wrapper, LRU, configurable depth)─────┘
+│   ├─ chess.js           (chess.js helpers)
+│   ├─ explainer.js       (Lichess win-rate sigmoid + classifier
+│   │                      with obvious-recapture guard)
+│   ├─ analysis.js        (getTopMoves, explainMoveAt — public API)
+│   ├─ analyzer-rs.js     (WASM bridge: analyze, explain_position,
+│   │                      composeTagline, evaluate_fen)
+│   ├─ full-explanation.js (engine-augmented blob: attack potential,
+│   │                       principal plan, GM narrative)
+│   ├─ openings.js        (FEN-keyed opening dictionary)
+│   ├─ taglines.js        (legacy JS taglines — fallback)
+│   └─ wasm-rs/           (build artefact: engine_rs.js + .wasm)
+│                                                                          ▲
+│  engine-rs/  (Rust → WASM, the analytical core)                          │
+│   ├─ src/lib.rs           (wasm_bindgen exports)─────────────────────────┘
+│   ├─ src/eval.rs          (HCE: material/PSQT/mobility/pawns/king/threats/imbalance)
+│   ├─ src/motifs.rs        (70+ motif detectors)
+│   ├─ src/explanation.rs   (ExplanationBlob composition)
+│   ├─ src/piece_value.rs   (per-piece contextual valuation for the heatmap)
+│   ├─ src/see.rs           (Static Exchange Evaluation)
+│   ├─ src/util.rs          (square / file / colour helpers)
+│   ├─ tests/motif_assertions.rs (14 integration tests)
+│   └─ build.sh             (wasm-pack + wasm-opt with bulk-memory +
+│                            nontrapping-float-to-int features)
+└────────────────────────────────────────────┘
 ```
 
-Everything happens in the browser. The Worker runs the Stockfish engine; the main thread orchestrates analysis, runs the move explainer, and renders the board. There is no server in the request path.
+Everything happens in the browser. The Stockfish Worker runs the search; the main thread runs the WASM-Rust analyzer for static evaluation, motif detection, and explanation-blob composition; React orchestrates the UI. There is no server in the request path.
 
 ---
 
 ## Tech Stack
 
-| Layer            | Choice                                                            |
-| ---------------- | ----------------------------------------------------------------- |
-| Framework        | React 19                                                          |
-| Build tool       | Vite 7                                                            |
-| Styling          | Tailwind CSS 3 + inline styles                                    |
-| Chess logic      | [`chess.js`](https://github.com/jhlywa/chess.js) 1.4              |
-| Board            | [`react-chessboard`](https://github.com/Clariity/react-chessboard) 4.6 |
-| Engine           | [`stockfish`](https://www.npmjs.com/package/stockfish) 18 (lite, single-threaded WASM) |
-| Icons            | `lucide-react`                                                    |
-| Lint             | ESLint 9 (flat config)                                            |
+| Layer                        | Choice                                                            |
+| ---------------------------- | ----------------------------------------------------------------- |
+| Framework                    | React 19                                                          |
+| Build tool                   | Vite 7                                                            |
+| Styling                      | Tailwind CSS 3 + inline styles + a small `index.css` of reusable component classes (`.icon-btn`, `.status-pill`, `.history-token`, `.top-move-row`, `.thin-scroll`, `.analysis-panel`) |
+| Chess logic                  | [`chess.js`](https://github.com/jhlywa/chess.js) 1.4              |
+| Board                        | [`react-chessboard`](https://github.com/Clariity/react-chessboard) 4.6 |
+| Engine                       | [`stockfish`](https://www.npmjs.com/package/stockfish) 18 (lite, single-threaded WASM) — runs in a Web Worker |
+| **Analytical core**          | **Rust → WebAssembly** (`engine-rs/`). Exposes `analyze`, `analyze_pv`, `evaluate_fen`, `explain_position`, `piece_contributions`, `piece_value_at` to JS via `wasm-bindgen`. ~150 KB raw / ~37 KB gzipped. |
+| Rust crates                  | `shakmaty` (chess rules), `wasm-bindgen` + `serde-wasm-bindgen` + `serde_json` (FFI), `serde` (struct serialisation) |
+| Icons                        | `lucide-react` for UI controls; **inline SVG** for chess pieces (`ChessPieceIcon.jsx`) and move-quality glyphs (`QualityIcon.jsx`) so they render consistently across font fallbacks |
+| Build pipeline (Rust → WASM) | `wasm-pack build --release --target web`, post-processed by `wasm-opt -O3` with bulk-memory + nontrapping-float-to-int features enabled (see `engine-rs/build.sh`) |
+| Tests                        | `cargo test --release` against `engine-rs/tests/motif_assertions.rs` — 14 integration tests for the motif analyzer |
+| Lint                         | ESLint 9 (flat config) for JS                                     |
 
 What is **not** in the stack:
 - No backend, no database, no API, no auth, no WebSockets.
 - No SharedArrayBuffer / COOP-COEP requirements (we use the single-threaded WASM build).
+- No external chess-piece SVG library — pieces are inline-rendered from path data we ship.
 
 ---
 
@@ -97,36 +152,70 @@ What is **not** in the stack:
 
 ```
 .
-├── client/                              # The deployed app
+├── client/                                       # The deployed app
 │   ├── public/
 │   │   └── stockfish/
-│   │       ├── stockfish-18-lite-single.js     # Web Worker entry
-│   │       └── stockfish-18-lite-single.wasm   # ~7 MB engine binary
+│   │       ├── stockfish-18-lite-single.js       # Web Worker entry
+│   │       └── stockfish-18-lite-single.wasm     # ~7 MB engine binary
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Board.jsx                # Main board, history, FEN input, top-moves wiring
-│   │   │   ├── EvalBar.jsx              # Vertical eval bar
-│   │   │   ├── TopMoves.jsx             # (currently unused — duplicate of inline UI)
-│   │   │   └── MoveExplanation.jsx      # (currently unused)
-│   │   ├── engine/                      # ★ The analysis pipeline lives here
-│   │   │   ├── engine.js                # Stockfish Worker wrapper (UCI, queue, timeout, LRU cache)
-│   │   │   ├── chess.js                 # chess.js helpers (FEN, legal moves, game status)
-│   │   │   ├── explainer.js             # Win-rate sigmoid + tactical motif detection
-│   │   │   └── analysis.js              # Public API: getTopMoves / getBestMove / explainMoveAt
+│   │   │   ├── Board.jsx                         # Main board, two-column layout, captured strips,
+│   │   │   │                                     # quality bars, top-moves circles, last-move card
+│   │   │   ├── EvalBar.jsx                       # 36 px flat eval bar with inside-bar label
+│   │   │   ├── CapturedStrip.jsx                 # Above- and below-board piece strips
+│   │   │   ├── PositionQualityBars.jsx           # Bipolar bars per HCE head + Attack potential
+│   │   │   │                                     # + GM narrative + Engine plan section
+│   │   │   ├── MoveCharacter.jsx                 # Top-moves circle component + engineConsensus()
+│   │   │   ├── SettingsPanel.jsx                 # Gear-icon dropdown: depth + multi-PV sliders
+│   │   │   ├── Tooltip.jsx                       # Hover-triggered floating popover (portal)
+│   │   │   ├── ChessPieceIcon.jsx                # 12 inline-SVG chess piece silhouettes
+│   │   │   └── QualityIcon.jsx                   # 8 inline-SVG move-quality glyphs
+│   │   ├── engine/                               # ★ The JS analysis layer
+│   │   │   ├── engine.js                         # Stockfish Worker wrapper (UCI, queue, timeout,
+│   │   │   │                                     # LRU cache, configurable depth via localStorage)
+│   │   │   ├── chess.js                          # chess.js helpers (FEN, legal moves, status)
+│   │   │   ├── explainer.js                      # Win-rate sigmoid + classifier (with obvious-
+│   │   │   │                                     # recapture + only-legal-move guards)
+│   │   │   ├── analysis.js                       # Public API: getTopMoves / explainMoveAt
+│   │   │   ├── analyzer-rs.js                    # WASM bridge: analyze, explain_position,
+│   │   │   │                                     # composeTagline (with phrasesOverlap dedup)
+│   │   │   ├── full-explanation.js               # Engine-augmented blob:
+│   │   │   │                                     #   engine_attack_potential
+│   │   │   │                                     #   principal_plan (PV walked + theme)
+│   │   │   │                                     #   composeNarrative (GM-style summary)
+│   │   │   ├── openings.js                       # ~40-position opening dictionary
+│   │   │   ├── taglines.js                       # Legacy JS taglines (fallback)
+│   │   │   └── wasm-rs/                          # Built artefacts (engine_rs.js, .wasm)
+│   │   ├── index.css                             # Tailwind + reusable component classes
 │   │   ├── App.jsx
 │   │   └── main.jsx
 │   ├── index.html
 │   ├── vite.config.js
 │   └── package.json
 │
-├── server/                              # ★ Legacy. Not required to run the app.
-│   └── src/
-│       ├── engine.js                    # Native Stockfish wrapper (was: Express + child_process)
+├── engine-rs/                                    # ★ Rust → WASM analytical core
+│   ├── src/
+│   │   ├── lib.rs                                # wasm_bindgen exports
+│   │   ├── eval.rs                               # HCE: 7 heads, phased mg/eg
+│   │   ├── motifs.rs                             # 70+ motif detectors + composer priority table
+│   │   ├── explanation.rs                        # ExplanationBlob composition
+│   │   ├── piece_value.rs                        # Per-piece contextual valuation (heatmap)
+│   │   ├── see.rs                                # Static Exchange Evaluation
+│   │   └── util.rs                               # Square / file / colour helpers
+│   ├── tests/
+│   │   └── motif_assertions.rs                   # 14 integration tests
+│   ├── build.sh                                  # wasm-pack + wasm-opt pipeline
+│   ├── Cargo.toml
+│   └── pkg/                                      # wasm-pack output (gitignored)
+│
+├── server/                                       # ★ Legacy. Not required to run the app.
+│   └── src/                                      # Reference for the old Node-server pipeline.
+│       ├── engine.js
 │       ├── chess.js
 │       ├── api.js
 │       └── explainer.js
 │
-├── vercel.json                          # Vercel deploy config
+├── vercel.json                                   # Vercel deploy config
 ├── .gitignore
 └── README.md
 ```
@@ -612,19 +701,83 @@ nav, FEN load), the analysis panel's top card runs the full
 A single Stockfish process runs in a Web Worker. The wrapper:
 - Buffers `postMessage` lines so partial UCI responses are never lost.
 - Performs a `uci` → `isready` → `readyok` handshake before accepting jobs.
-- Enforces a 15-second timeout per job (sends UCI `stop` then rejects, so the queue can't wedge).
+- Enforces a 30-second timeout per job (sends UCI `stop` then rejects, so the queue can't wedge).
 - Returns `{ cp, mate }` from `evaluate()` so callers can distinguish `+9.99` pawns from "mate in 3."
 - Caches results in an LRU keyed on `(fen, depth, multipv)`.
+- Reads default depth + MultiPV from `localStorage` so the in-app **Settings** panel can change them without code changes.
 
-### 2. Top moves
-Sets `setoption name MultiPV value N`, runs a single search, and harvests the deepest `info` line per `multipv` slot.
+### 2. Top-moves multi-PV
+Sets `setoption name MultiPV value N`, runs a single search, and harvests the deepest `info` line per `multipv` slot. Each line is annotated by `analyzer-rs.js`'s `analyzeMove(fen, uci)` which returns `{ san, motifs[], fen_after, ... }`. Tagline composition runs in JS via `composeTagline()`.
 
-### 3. The explainer (`client/src/engine/explainer.js`)
-- **Win-rate sigmoid** — `winRate(cp) = 100 / (1 + e^(-cp/300))`, the same shape Lichess uses. Thresholds operate on the *win-rate delta* from the mover's perspective.
-- **Engine top-1 / top-2 reference** — fetched alongside the eval. The player's move is compared against the engine's top choice; matching it plus a real material sacrifice (the moving piece is now hanging for ≥ 200 cp net) upgrades the verdict to `brilliant`.
-- **Tactical motif detection** — fork, pin, discovered check, removal-of-defender, sacrifice.
-- **Terminal-state shortcuts** — `chessAfter.isCheckmate()` returns immediately with quality `brilliant`; `isStalemate()` flags accidental stalemates as a blunder when the side was previously winning.
-- **Positional factors** — PST-based activity, center occupation, development (gated to `moveNumber ≤ 12`), and king-attack proximity.
+### 3. Static evaluator (Rust → WASM, `engine-rs/src/eval.rs`)
+A hand-crafted evaluator (HCE) with 7 heads, phased between middlegame and endgame quanta (0..=24):
+
+| head           | what it scores                                                   |
+| -------------- | ---------------------------------------------------------------- |
+| `material`     | PeSTO-tuned mg/eg piece values                                   |
+| `psqt`         | Piece-square tables — knights central, rooks on open files, kings safe in mg / active in eg |
+| `mobility`     | Counts of safe attack squares per piece type                     |
+| `pawns`        | Islands, doubled, isolated, backward, supported, passed, holes   |
+| `king_safety`  | Pawn shield, attacker count + weight, open + half-open files     |
+| `threats`      | Lower-value attacker bonuses (knights threatening rooks, etc.)   |
+| `imbalance`    | Bishop-pair bonus, opposite-coloured-bishop adjustment, knight-vs-bishop fits |
+
+The evaluator is the source of truth for:
+- The eval bar (final cp, white-relative).
+- The position-quality bars below the board (per-head deltas).
+- Per-piece contextual valuation (`piece_contributions`, `piece_value_at`) used by the heatmap.
+- The `phase` classification consumed by motifs (opening / middlegame / endgame).
+
+### 4. Motif analyzer (Rust → WASM, `engine-rs/src/motifs.rs`)
+Given (`before`, `after`, `mv`, optional terminal) returns a `Vec<Motif { id, phrase, priority }>`. Each motif is a **rigorous** detector with explicit false-positive guards:
+
+- **Threats / captures**: SEE-aware everywhere. `threatens` only fires if the capture would actually win material. `attacks_pawn` requires defender count < 2 AND SEE ≥ 0. `hangs` doesn't fire on clean trades.
+- **Tactical patterns**: fork (≥ 2 SEE-positive targets or king + ≥ 1 SEE-positive), pin (bucketed-value strict), skewer (front strictly heavier), discovered check, double check (split from discovered), Greek gift (Bxh7+ / Bxh2+ with king + follow-up piece), Anastasia's mate (rim-king + knight cut-off + rook), Boden's mate (king + crossfire bishops), Arabian-style (corner + rook + knight ≤ 2), back-rank mate threat (no luft + heavy piece on rank), smothered mate hint, decisive combination (capture + check / threat + ≥ 150 cp swing).
+- **Pawn structure**: IQP, hanging pawns (c+d / d+e), passed, supported, backward, isolated, holes, color-complex weakness, pawn breakthrough (capture creates passer), pawn break, pawn lever, pawn storm.
+- **Piece play**: knight invasion (deep enemy half + outpost), outpost (suppressed when knight_invasion fired), rook lift (back rank → rank 3/6 on f/g/h), opens-file-for / opens-diagonal-for, fianchetto, long diagonal, rook on 7th, open + half-open files, doubles rooks, battery.
+- **King attack**: attacks-king (range + distance), eyes-king-zone (requires ≥ 2 zone squares OR check-line geometry), luft (only fires on real back-rank threats), pawn shield.
+- **Strategic / phase-aware**: loses-castling (non-castling K/R move that forfeits rights), prophylaxis (move drops enemy attack count by ≥ 3), multi-purpose (≥ 3 strong-bucket motifs without a headline tactic), activates (middlegame/endgame with eval gain ≥ 25cp), centralises (only on d4/d5/e4/e5; suppressed by outpost / knight_invasion / fianchetto / long_diagonal / rook_seventh / rook_lift / open_file / semi_open_file), develops (opening only), connects rooks.
+- **Trade nuance**: simplifies (trade while ≥ +200cp ahead), trades-into-endgame (low-phase same-role swap), trades-when-behind (≤ −200cp), queen trade, piece trade, exchange sacrifice.
+
+A single priority table (`priority_of(id)`) drives the JS composer's ordering.
+
+### 5. The composer (`client/src/engine/analyzer-rs.js`)
+`composeTagline(rustResult)` produces the final tagline:
+1. **Named patterns subsume their components.** When `greek_gift`, `decisive_combination`, `smothered_hint`, `back_rank_mate_threat`, `anastasia_mate_threat`, `bodens_mate_threat`, `arabian_mate_threat`, or `double_check` fires, that's the headline — supporting motifs are dropped.
+2. **Forced/forcing combos** read better as one phrase: "Forks knight and rook with check", "Removes the defender, leaving it undefended", "Rook lift — joining the king attack", "Simplifies by trading knights with check".
+3. **Pair fallback with `phrasesOverlap()`** dedup — if the top-2 phrases mention the same role / file-pawn / square, only the higher-priority one wins.
+4. **Single phrase** when only one visible motif fired.
+5. **Empty** when nothing meaningful fired (better silence than filler).
+
+### 6. ExplanationBlob (`engine-rs/src/explanation.rs`)
+The new WASM export `explain_position(fen)` returns a structured blob designed for downstream LLM consumption:
+
+| section            | content                                                          |
+| ------------------ | ---------------------------------------------------------------- |
+| `material`         | per-side piece counts, bishop pair, opposite-coloured bishops, minor/heavy summary, cp delta, human summary |
+| `pawn_structure`   | per side: islands, doubled, isolated, backward, passed, supported, holes, majority side, chains. IQP + hanging pawns + colour-complex flags |
+| `king_safety`      | per king: castled, pawn shield 0–100, attacker count + list, open + half-open files to king, weak diagonals, escape-square count, **0–1000 danger score** |
+| `activity`         | per side: mobility, squares-in-enemy-half (space), central minors, outposts, bad bishop, passive pieces, long-diagonal control |
+| `line_control`     | open files w/ controller, half-open files, long diagonals controller, rooks-on-7th, 7th-rank dominance |
+| `tactics`          | hanging pieces with SEE loss, pinned pieces with absolute flag, in-check side |
+| `themes`           | synthesised high-level insights with 0–100 strength + description (material edge, bishop pair, king safety, piece activity, space, IQP, colour complex, open files, long diagonals, 7th rank, hanging pieces, leading factor) |
+| `eval_breakdown`   | white-relative tapered cp per HCE head                           |
+| `verdict`          | one-line summary string                                          |
+
+### 7. Engine-augmented blob (JS, `client/src/engine/full-explanation.js`)
+`buildFullExplanation(fen)` combines the static blob with Stockfish multi-PV results:
+- **`engine_attack_potential`** — what fraction of the engine's top moves target the king zone (via attacks_king / eyes_king_zone / check / fork / sacrifice / Greek gift / etc. motifs). Drives the "Attack potential" bar in the UI.
+- **`principal_plan`** — the engine's PV walked move-by-move, each annotated with motifs and a one-line headline. Plus key squares (visited ≥ 2 times) and an inferred theme (kingside_attack / simplification / piece_activity / pawn_advance / tactics).
+- **GM-style narrative** — `composeNarrative(blob)` synthesises a multi-paragraph summary: verdict opener (with move number + phase grounding), leading factor, eval breakdown, material, king safety with engine attack potential, activity, pawn structure, line control, tactics, engine plan. Every claim grounded in the structured blob.
+
+### 8. The classifier (`client/src/engine/explainer.js`)
+- **Win-rate sigmoid** — `winRate(cp) = 100 / (1 + e^(-0.00368208·cp))`, the Lichess-exact form. Thresholds operate on the *win-rate delta* from the mover's perspective.
+- **Engine top-1 / top-N reference** — fetched alongside the eval. The player's move is compared against the engine's top choice.
+- **`brilliant`** — top-1 engine choice + real (SEE-based) sacrifice + complexity ≥ 2 + position not already decided.
+- **`great`** — top engine choice in a critical / only-move position. **Demoted to `best`** when the move is an obvious recapture (capture with SEE ≥ 0 AND recovered ≥ moved − 50) or when there's only one legal move — even an only-move isn't a brilliant find if it's mechanical.
+- **`missed_mate`** — best move had mate but the played move didn't.
+- **`blunder`** — drops winning to losing (wrBefore ≥ 75 → wrPlayed ≤ 35) or raw loss past Lichess threshold.
+- **Lichess-style symbols + colour-coded pills + animated SVG quality icons** in the last-move card.
 
 ---
 

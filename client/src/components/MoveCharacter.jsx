@@ -179,82 +179,11 @@ export default function MoveCharacterCircle({
   );
 }
 
-// Recapture-wisdom: when the top-2 moves are both captures targeting
-// the same square (e.g. bxc5 vs dxc5), explain WHY the engine prefers
-// one over the other. We attribute reasons by inspecting the motif sets:
-//
-//   • Top simplifies   → "Recapturing with the X bleeds pieces off the
-//                          board (we're already winning material)."
-//   • Top opens_file   → "Recapturing with X opens the [file]-file for
-//                          our rook to take over."
-//   • Top centralizes  → "Recapturing with X centralizes the piece."
-//   • Top outpost      → "Recapturing with X plants a piece on a strong
-//                          outpost."
-//   • Eval delta only  → "Engine prefers X by N centipawns; the
-//                          alternative leaves a worse pawn structure /
-//                          slower piece activity."
-//
-// Returns null when no recapture comparison applies.
-//
-// `moves` is the topMoves array (with `motifs`, `eval_pawns`, `move`).
-const FILES = ['a','b','c','d','e','f','g','h'];
-function fileLetterFromUci(uci) { return uci ? uci[2] : null; }
-function rankFromUci(uci) { return uci ? uci[3] : null; }
-
-export function recaptureWisdom(moves = []) {
-  if (!Array.isArray(moves) || moves.length < 2) return null;
-  const a = moves[0];
-  const b = moves[1];
-  if (!a || !b) return null;
-  // Both must capture; both target the same square.
-  const aIsCap = (a.motifs || []).some(m =>
-    ['capture', 'piece_trade', 'queen_trade', 'simplifies', 'trades_into_endgame', 'exchange_sacrifice'].includes(m));
-  const bIsCap = (b.motifs || []).some(m =>
-    ['capture', 'piece_trade', 'queen_trade', 'simplifies', 'trades_into_endgame', 'exchange_sacrifice'].includes(m));
-  if (!aIsCap || !bIsCap) return null;
-  const aSq = `${fileLetterFromUci(a.move)}${rankFromUci(a.move)}`;
-  const bSq = `${fileLetterFromUci(b.move)}${rankFromUci(b.move)}`;
-  if (aSq !== bSq) return null;
-  // Same destination — likely two ways to recapture. Attribute the
-  // engine's preference based on what the TOP move uniquely has.
-  const aSet = new Set(a.motifs || []);
-  const bSet = new Set(b.motifs || []);
-  const onlyA = [...aSet].filter(x => !bSet.has(x));
-  // Highest-priority distinctive motif → drive the explanation.
-  const rules = [
-    ['simplifies', `Recapturing this way bleeds pieces off the board (we're already ahead).`],
-    ['trades_into_endgame', `Recapturing here heads straight to the endgame.`],
-    ['opens_file_for', `Recapturing this way opens a file for our heavy pieces.`],
-    ['opens_diagonal_for', `Recapturing this way opens a diagonal for our bishop or queen.`],
-    ['knight_invasion', `Recapturing with the knight plants a piece deep in enemy territory.`],
-    ['outpost', `Recapturing this way plants a piece on a strong outpost.`],
-    ['centralizes', `Recapturing this way centralises the piece.`],
-    ['fork', `The recapture also forks two enemy pieces.`],
-    ['pin', `The recapture also pins an enemy piece.`],
-    ['discovered_check', `The recapture uncovers a discovered check.`],
-    ['eyes_king_zone', `Recapturing this way joins the attack on the king.`],
-    ['battery', `Recapturing this way completes a battery on the open line.`],
-    ['rook_seventh', `Recapturing this way puts a rook on the 7th rank.`],
-    ['removes_defender', `The recapture also removes a key defender.`],
-  ];
-  for (const [id, txt] of rules) {
-    if (onlyA.includes(id)) {
-      return { square: aSq, sanA: a.san, sanB: b.san, reason: txt };
-    }
-  }
-  // No structural distinction — fall back to eval delta.
-  const aEv = a.eval_pawns ?? 0;
-  const bEv = b.eval_pawns ?? 0;
-  const delta = (typeof aEv === 'number' && typeof bEv === 'number')
-    ? Math.abs(aEv - bEv) : 0;
-  if (delta >= 0.2) {
-    return {
-      square: aSq, sanA: a.san, sanB: b.san,
-      reason: `Engine prefers ${a.san} by ${delta.toFixed(2)} pawns — the alternative ${b.san} leaves a slightly worse position.`,
-    };
-  }
-  return null;
-}
+// (`recaptureWisdom` removed — it was a narrow one-off helper that
+// hard-coded a few "X over Y" rules. The right place for this kind of
+// reasoning is inside the motif system + narrative composer, where the
+// SAME principles drive every comparison the analyzer makes — not as
+// special-case code for one move-pattern.)
 
 // Engine-consensus summary string. Looks across all top-moves and
 // returns a one-liner describing the engine's overall recommendation.
