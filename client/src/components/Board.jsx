@@ -199,18 +199,10 @@ export default function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fen]);
 
-  // Consequence string for the played move. Comes from connectors.js
-  // diffing `prevPosExplanation` against `posExplanation`. Suppressed
-  // when either is missing (initial position, etc.).
-  const lastMoveConsequence = React.useMemo(() => {
-    if (!prevPosExplanation || !posExplanation || !lastMoveAnalysis) return null;
-    if (lastMoveAnalysis.loading) return null;
-    return topConsequenceLine(prevPosExplanation, posExplanation, {
-      movingSide: prevPosExplanation.side_to_move,
-      motifs: lastMoveAnalysis.motifs || [],
-      evalSwingCp: (posExplanation.eval_cp || 0) - (prevPosExplanation.eval_cp || 0),
-    });
-  }, [prevPosExplanation, posExplanation, lastMoveAnalysis]);
+  // (`lastMoveConsequence` was here, but it referenced `lastMoveAnalysis`
+  //  which is declared further down — that triggers a temporal-dead-zone
+  //  ReferenceError at render time. Moved below the lastMoveAnalysis
+  //  declaration.)
 
   // Click-to-select with legal-move indicators (also set during drag).
   const [selectedSquare, setSelectedSquare] = useState(null);
@@ -606,6 +598,20 @@ export default function Board() {
   // the user lands on a position that was reached by a move (i.e. not the
   // starting position), explain that move.
   const [lastMoveAnalysis, setLastMoveAnalysis] = useState(null);
+
+  // Consequence string for the played move. Comes from connectors.js
+  // diffing `prevPosExplanation` against `posExplanation`. Suppressed
+  // when either is missing (initial position, FEN load, etc.).
+  // Defined here (after lastMoveAnalysis) to avoid a TDZ ReferenceError.
+  const lastMoveConsequence = React.useMemo(() => {
+    if (!prevPosExplanation || !posExplanation || !lastMoveAnalysis) return null;
+    if (lastMoveAnalysis.loading) return null;
+    return topConsequenceLine(prevPosExplanation, posExplanation, {
+      movingSide: prevPosExplanation.side_to_move,
+      motifs: lastMoveAnalysis.motifs || [],
+      evalSwingCp: (posExplanation.eval_cp || 0) - (prevPosExplanation.eval_cp || 0),
+    });
+  }, [prevPosExplanation, posExplanation, lastMoveAnalysis]);
 
   useEffect(() => {
     if (historyIndex === 0) { setLastMoveAnalysis(null); return; }
