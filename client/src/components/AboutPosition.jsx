@@ -410,29 +410,17 @@ export default function AboutPosition({ explanation }) {
             Engine plan{plan.depth ? ` · depth ${plan.depth}` : ''}
           </div>
           {plan.description && (
-            <div style={{ color: '#d4d4d8', marginBottom: '4px' }}>
+            <div style={{ color: '#d4d4d8' }}>
               {plan.description}
             </div>
           )}
-          <div style={{
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontSize: '11px',
-            color: '#a1a1aa',
-            display: 'flex',
-            gap: '4px',
-            flexWrap: 'wrap',
-          }}>
-            {plan.moves.slice(0, 6).map((m, i) => (
-              <span key={i}>{m.san}</span>
-            ))}
-          </div>
           {plan.zwischenzug && (
             <div style={{
               marginTop: '4px',
               fontSize: '11px',
               color: '#fde68a',
             }}>
-              ⚡ {plan.zwischenzug.description}
+              {plan.zwischenzug.description}
             </div>
           )}
         </div>
@@ -479,13 +467,14 @@ export default function AboutPosition({ explanation }) {
           color: '#a1a1aa',
           lineHeight: 1.55,
         }}>
-          {/* Remaining facts (everything beyond the top 5). */}
+          {/* Remaining facts (the ones below the importance threshold
+              and / or beyond the top FACT_COUNT_DEFAULT). */}
           {remaining > 0 && (
             <ul style={{
               listStyle: 'none', padding: 0, margin: 0,
               display: 'flex', flexDirection: 'column', gap: '4px',
             }}>
-              {facts.slice(FACT_COUNT_DEFAULT).map((f, i) => (
+              {allFacts.slice(visible.length).map((f, i) => (
                 <Fact key={i} fact={f} muted />
               ))}
             </ul>

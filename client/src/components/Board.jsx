@@ -1694,17 +1694,7 @@ export default function Board() {
                             fontStyle: 'italic',
                             lineHeight: 1.4,
                           }}>
-                            ↪ {enriched.plan_brief}
-                            {enriched.plan_pv && enriched.plan_pv.length > 0 && (
-                              <span style={{
-                                marginLeft: '6px',
-                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                                fontStyle: 'normal',
-                                color: '#52525b',
-                              }}>
-                                ({enriched.plan_pv.slice(0, 3).join(' ')})
-                              </span>
-                            )}
+                            Plan: {enriched.plan_brief}.
                           </div>
                         )}
                       </>
