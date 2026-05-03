@@ -187,12 +187,22 @@ export async function buildFullExplanation(fen, opts = {}) {
   //
   // Fix: keep both, but the canonical `eval_cp` becomes the engine's.
   // AboutPosition's verdict will now match the eval bar exactly.
+  // CRITICAL: Stockfish's UCI score is from the SIDE-TO-MOVE'S perspective
+  // (positive = good for whoever's about to play), NOT white-POV. The
+  // Rust HCE's `final_cp` IS white-POV. The eval bar normalises to
+  // white-POV via `normalizeToWhite(score, turn)` in analysis.js — here
+  // we must do the same flip, otherwise the verdict reads "Black is
+  // clearly winning" on a +5.55 white position. (The user reported
+  // exactly this.)
   if (typeof engineRes.score === 'number') {
+    const stmIsWhite_ = stm === 'w';
+    const whitePovScore = stmIsWhite_ ? engineRes.score : -engineRes.score;
     staticBlob.static_eval_cp = staticBlob.eval_cp;
-    staticBlob.eval_cp = engineRes.score;
-    staticBlob.eval_pawns = engineRes.score / 100;
+    staticBlob.eval_cp = whitePovScore;
+    staticBlob.eval_pawns = whitePovScore / 100;
     if (engineRes.mate !== null && engineRes.mate !== undefined) {
-      staticBlob.eval_mate = engineRes.mate;
+      // Mate scores share the same convention.
+      staticBlob.eval_mate = stmIsWhite_ ? engineRes.mate : -engineRes.mate;
     }
   }
 
@@ -246,20 +256,29 @@ export async function buildFullExplanation(fen, opts = {}) {
   //
   // We only fire when the position is also low-piece (endgame) since
   // zugzwang in middlegames is rare and harder to verify statically.
+  // Zugzwang detection — uses the HCE static eval (preserved as
+  // `static_eval_cp`) as the "free-move" approximation, vs the engine's
+  // best-move score. Both converted to STM-POV.
+  //
+  // Stockfish's `info score cp` is ALREADY STM-POV at the search root,
+  // so `bestRaw` needs no flip. The HCE blob field is white-POV; flip
+  // to STM-POV for the comparison.
   const stmIsWhite = stm === 'w';
-  const stmStaticCp = stmIsWhite ? (staticBlob.eval_cp || 0) : -(staticBlob.eval_cp || 0);
-  const bestRaw = annotatedMoves[0]?.score ?? null;
-  const bestStmCp = bestRaw !== null
-    ? (stmIsWhite ? bestRaw : -bestRaw)
-    : null;
-  if (bestStmCp !== null && stmStaticCp - bestStmCp >= 50 && staticBlob.phase === 'endgame') {
+  const stmStaticCp = stmIsWhite
+    ? (staticBlob.static_eval_cp ?? staticBlob.eval_cp ?? 0)
+    : -(staticBlob.static_eval_cp ?? staticBlob.eval_cp ?? 0);
+  const bestStmCp = annotatedMoves[0]?.score ?? null; // already STM-POV
+  // Require a meaningful gap (≥ 200 cp) AND endgame phase — middlegame
+  // zugzwang is rare and the HCE-vs-engine gap inflates the signal in
+  // tactical positions.
+  if (bestStmCp !== null && stmStaticCp - bestStmCp >= 200 && staticBlob.phase === 'endgame') {
     const stmCap = stmIsWhite ? 'White' : 'Black';
     const drop = ((stmStaticCp - bestStmCp) / 100).toFixed(2);
     staticBlob.themes.push({
       id: 'zugzwang',
       side: stmIsWhite ? 'black' : 'white',
       strength: 80,
-      description: `${stmCap} is in zugzwang — every move concedes (best move drops ${drop} pawns from the static eval)`,
+      description: `${stmCap} is in zugzwang — every move concedes (best move drops ${drop} pawns)`,
     });
   }
 
