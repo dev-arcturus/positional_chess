@@ -329,7 +329,8 @@ function mateInN(explanation) {
   return null;
 }
 
-const FACT_COUNT_DEFAULT = 5;
+const FACT_COUNT_DEFAULT = 3;
+const FACT_IMPORTANCE_MIN = 60;
 
 export default function AboutPosition({ explanation }) {
   const [expanded, setExpanded] = useState(false);
@@ -337,10 +338,20 @@ export default function AboutPosition({ explanation }) {
 
   const cp = explanation.eval_cp ?? 0;
   const v = verdictText(cp);
-  const facts = extractFacts(explanation);
-  const visible = facts.slice(0, FACT_COUNT_DEFAULT);
-  const remaining = facts.length - visible.length;
+  // Strict filter: top N facts, importance ≥ FACT_IMPORTANCE_MIN.
+  // Anything below that is NOISE — show only the most decisive
+  // signals so the user reads the headline, not a wall of bullets.
+  const allFacts = extractFacts(explanation);
+  const decisiveFacts = allFacts.filter(f => f.importance >= FACT_IMPORTANCE_MIN);
+  const visible = decisiveFacts.slice(0, FACT_COUNT_DEFAULT);
+  const remaining = allFacts.length - visible.length;
   const plan = explanation.principal_plan;
+
+  // Promote the engine plan: when there's a real plan with moves AND
+  // the user can read it, show it WITHOUT requiring an expand. The
+  // plan is what tells you "where this is going" — it's the most
+  // valuable piece of forward-looking signal in the whole panel.
+  const hasPlan = plan && Array.isArray(plan.moves) && plan.moves.length >= 2;
 
   return (
     <div style={{
@@ -357,7 +368,7 @@ export default function AboutPosition({ explanation }) {
         {v.side === null && <span>; {explanation.side_to_move === 'white' ? 'White' : 'Black'} to move.</span>}
       </div>
 
-      {/* Concrete facts — bullet list, no numbers, no pills. */}
+      {/* Concrete facts — at most 3, only the truly decisive ones. */}
       {visible.length > 0 && (
         <ul style={{
           listStyle: 'none',
@@ -373,6 +384,58 @@ export default function AboutPosition({ explanation }) {
             <Fact key={i} fact={f} />
           ))}
         </ul>
+      )}
+
+      {/* Engine plan — promoted to always-visible. The most valuable
+          forward-looking signal: tells you where the engine is heading
+          over the next several plies. Renders as a clean line with the
+          theme description + the SAN sequence.
+       */}
+      {hasPlan && (
+        <div style={{
+          marginTop: '10px',
+          paddingTop: '8px',
+          borderTop: '1px dashed #27272a',
+          fontSize: '12px',
+          lineHeight: 1.55,
+        }}>
+          <div style={{
+            fontSize: '9px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            fontWeight: 700,
+            color: '#52525b',
+            marginBottom: '4px',
+          }}>
+            Engine plan{plan.depth ? ` · depth ${plan.depth}` : ''}
+          </div>
+          {plan.description && (
+            <div style={{ color: '#d4d4d8', marginBottom: '4px' }}>
+              {plan.description}
+            </div>
+          )}
+          <div style={{
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: '11px',
+            color: '#a1a1aa',
+            display: 'flex',
+            gap: '4px',
+            flexWrap: 'wrap',
+          }}>
+            {plan.moves.slice(0, 6).map((m, i) => (
+              <span key={i}>{m.san}</span>
+            ))}
+          </div>
+          {plan.zwischenzug && (
+            <div style={{
+              marginTop: '4px',
+              fontSize: '11px',
+              color: '#fde68a',
+            }}>
+              ⚡ {plan.zwischenzug.description}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Expand control — only when there's more to show. */}

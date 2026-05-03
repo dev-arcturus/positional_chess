@@ -176,6 +176,49 @@ export async function buildFullExplanation(fen, opts = {}) {
     }
   }
 
+  // ── Eval reconciliation ─────────────────────────────────────────────
+  //
+  // The static-blob field `eval_cp` was computed by the Rust HCE
+  // evaluator (no search). At depth-14 Stockfish frequently sees a
+  // very different value — sometimes by hundreds of cp — because it
+  // resolves tactics the HCE doesn't. The eval bar uses Stockfish's
+  // value (authoritative); the AboutPosition verdict was using the
+  // HCE value, so the two could disagree by 300+ cp.
+  //
+  // Fix: keep both, but the canonical `eval_cp` becomes the engine's.
+  // AboutPosition's verdict will now match the eval bar exactly.
+  if (typeof engineRes.score === 'number') {
+    staticBlob.static_eval_cp = staticBlob.eval_cp;
+    staticBlob.eval_cp = engineRes.score;
+    staticBlob.eval_pawns = engineRes.score / 100;
+    if (engineRes.mate !== null && engineRes.mate !== undefined) {
+      staticBlob.eval_mate = engineRes.mate;
+    }
+  }
+
+  // ── Plan description rewrite: piece journeys + target squares ─────
+  //
+  // The previous version emitted generic prose like "White's plan is
+  // a kingside attack" — useless. Now we walk the PV ply-by-ply and
+  // name:
+  //
+  //   1. The PRINCIPAL PIECE — the one that does most of the work
+  //      (multiple moves, or a piece that lands on a key square).
+  //   2. The DESTINATION squares — where pieces end up.
+  //   3. The TARGET — a recurring attacked square or captured piece.
+  //   4. The CHARACTER — kingside attack / simplification / structural
+  //      / pawn advance.
+  //
+  // Generated prose looks like:
+  //   "After Bb3, White routes the knight to f5 then g5, building
+  //    threats around h7. Engine line: Nf5 Bd6 Bb3 Re8 Ng5 Re7 Qh5."
+  // or:
+  //   "Trades the knights and heads into a pawn-up rook ending."
+  //   "Pushes the d5 pawn through to promote."
+  const description = composePlanDescription(
+    planSteps, planTheme, attackingSide, fen, engineRes
+  );
+
   staticBlob.principal_plan = {
     eval_cp: engineRes.score ?? 0,
     eval_mate: engineRes.mate ?? null,
@@ -183,21 +226,7 @@ export async function buildFullExplanation(fen, opts = {}) {
     moves: planSteps,
     key_squares: keySquares,
     theme: planTheme,
-    description: planTheme
-      ? planTheme === 'kingside_attack_white'
-        ? "White's plan is a kingside attack."
-        : planTheme === 'kingside_attack_black'
-        ? "Black's plan is a kingside attack."
-        : planTheme === 'simplification'
-        ? "The engine plans simplification through trades."
-        : planTheme === 'piece_activity'
-        ? "The engine improves piece activity."
-        : planTheme === 'pawn_advance'
-        ? "The engine plans a pawn advance / promotion."
-        : planTheme === 'tactics'
-        ? "The engine sees a concrete tactical sequence."
-        : `The engine's plan: ${planTheme.replace(/_/g, ' ')}.`
-      : null,
+    description,
   };
 
   staticBlob.engine_top_moves = annotatedMoves;
@@ -506,6 +535,144 @@ function composeNarrative(blob) {
 }
 
 export { composeNarrative };
+
+// ───────────────────────────────────────────────────────────────────────────
+// composePlanDescription — concrete prose from the principal-PV walk.
+//
+// Tracks each piece's movements through the PV (a piece may move once,
+// twice, three times during the line — that's a maneuver). Identifies
+// the most-active piece per side, the destinations they reach, and any
+// target square that gets attacked repeatedly. Returns a single sentence
+// the user can read ("White routes the knight from b1 to f5"), backed
+// by the SAN line the engine actually plans.
+// ───────────────────────────────────────────────────────────────────────────
+
+const ROLE_NAME_BY_LETTER = { N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king' };
+function roleNameFromSan(san) {
+  if (!san) return null;
+  const head = san[0];
+  return ROLE_NAME_BY_LETTER[head] || (head >= 'a' && head <= 'h' ? 'pawn' : null);
+}
+
+function composePlanDescription(planSteps, planTheme, attackingSide, rootFen, engineRes) {
+  if (!planSteps || planSteps.length === 0) return null;
+
+  // Walk the PV by side. Pieces are tracked by (side, original-from-square)
+  // so we can chain a maneuver like Nb1 → d2 → f1 → g3 → f5.
+  // We don't have FENs per ply for free here, so we'll approximate
+  // sides by parity (PV starts with the side-to-move at root).
+  const rootIsWhite = attackingSide === 'white';
+  // Each entry: { side, role, from, to, san, captured? }
+  const moves = planSteps.map((s, i) => {
+    const isOurMove = (i % 2 === 0);
+    const side = isOurMove
+      ? (rootIsWhite ? 'white' : 'black')
+      : (rootIsWhite ? 'black' : 'white');
+    return {
+      side,
+      role: roleNameFromSan(s.san),
+      from: s.from,
+      to: s.to,
+      san: s.san,
+      motifs: s.motifs || [],
+    };
+  });
+
+  // Track piece journeys (per-side). Key the chain on the FROM square
+  // we first see for that side; subsequent moves of the same piece
+  // (which start from the previous TO) get linked together.
+  const journeys = { white: new Map(), black: new Map() };
+  for (const m of moves) {
+    if (!m.role || m.role === 'pawn') continue; // pawns tracked separately
+    const j = journeys[m.side];
+    // Find an existing chain that ends at m.from
+    let chain = null;
+    for (const [, c] of j) {
+      if (c.lastSquare === m.from) { chain = c; break; }
+    }
+    if (chain) {
+      chain.path.push(m.to);
+      chain.lastSquare = m.to;
+    } else {
+      j.set(m.from, { role: m.role, originalFrom: m.from, path: [m.to], lastSquare: m.to });
+    }
+  }
+
+  // Identify the most-active piece per side.
+  function leadJourney(j) {
+    let best = null;
+    for (const c of j.values()) {
+      const len = c.path.length;
+      if (!best || len > best.path.length) best = c;
+    }
+    return best;
+  }
+  const ourJourney = leadJourney(journeys[attackingSide]);
+
+  // Captured pieces (piece-trade type).
+  const capturedTargets = [];
+  for (const m of moves) {
+    if (m.motifs.some(id => ['capture', 'piece_trade', 'queen_trade', 'simplifies'].includes(id))) {
+      capturedTargets.push({ side: m.side, square: m.to });
+    }
+  }
+
+  // Pawn pushes (promotion / pawn breakthrough).
+  const pawnPushes = moves.filter(m => m.role === 'pawn' && m.side === attackingSide);
+
+  const sideCap = attackingSide === 'white' ? 'White' : 'Black';
+  const oppCap = attackingSide === 'white' ? 'Black' : 'White';
+
+  // ── Compose the prose ───────────────────────────────────────────────
+  // We pick ONE concrete observation. Priorities (high → low):
+  //   1. Promotion / mate-in-N (engineRes.mate)
+  //   2. Multi-step piece maneuver to a specific square
+  //   3. Theme-based template (kingside attack / simplification / etc.)
+  //   4. Just the SAN line.
+
+  if (typeof engineRes.mate === 'number' && engineRes.mate !== 0) {
+    const n = Math.abs(engineRes.mate);
+    const winner = (engineRes.mate > 0 ? 'White' : 'Black');
+    return `${winner} mates in ${n}.`;
+  }
+
+  if (ourJourney && ourJourney.path.length >= 2) {
+    const role = ourJourney.role;
+    const start = ourJourney.originalFrom;
+    const dest = ourJourney.path[ourJourney.path.length - 1];
+    const intermediate = ourJourney.path.slice(0, -1).join(' → ');
+    if (planTheme && planTheme.startsWith('kingside_attack_')) {
+      return `${sideCap} routes the ${role} from ${start} via ${intermediate} to ${dest}, building threats against the ${oppCap.toLowerCase()} king.`;
+    }
+    return `${sideCap} maneuvers the ${role} from ${start} to ${dest} (via ${intermediate}).`;
+  }
+
+  if (planTheme && planTheme.startsWith('kingside_attack_')) {
+    return `${sideCap} pressures the ${oppCap.toLowerCase()} king. Engine line: ${planSteps.slice(0, 4).map(s => s.san).join(' ')}.`;
+  }
+  if (planTheme === 'simplification') {
+    if (capturedTargets.length > 0) {
+      return `${sideCap} simplifies — trades on ${capturedTargets[0].square} and heads into a clearer endgame.`;
+    }
+    return `${sideCap} simplifies through trades.`;
+  }
+  if (planTheme === 'pawn_advance') {
+    if (pawnPushes.length > 0) {
+      const finalPush = pawnPushes[pawnPushes.length - 1];
+      return `${sideCap} pushes the pawn toward promotion — ${finalPush.san} is the spearhead.`;
+    }
+    return `${sideCap} marches a passed pawn toward promotion.`;
+  }
+  if (planTheme === 'piece_activity') {
+    return `${sideCap} improves piece activity. Engine line: ${planSteps.slice(0, 4).map(s => s.san).join(' ')}.`;
+  }
+  if (planTheme === 'tactics') {
+    return `${sideCap} sees a concrete tactical sequence: ${planSteps.slice(0, 4).map(s => s.san).join(' ')}.`;
+  }
+
+  // Fallback — just describe the line.
+  return `Engine line: ${planSteps.slice(0, 5).map(s => s.san).join(' ')}.`;
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Helpers — per-move plan briefs and character labels.
