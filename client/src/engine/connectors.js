@@ -29,16 +29,10 @@
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-function deltaCount(beforeArr, afterArr) {
-  const b = new Set(beforeArr || []);
-  const a = new Set(afterArr || []);
-  const added   = [...a].filter(x => !b.has(x));
-  const removed = [...b].filter(x => !a.has(x));
-  return { added, removed };
-}
-
 function deltaSquares(beforeArr, afterArr) {
-  // Same as deltaCount but compares square-strings (e.g. 'd5').
+  // Set-difference helper for arrays of squares ('d5'), files ('e'), or
+  // any string identifier. Returns the items added in `afterArr` and
+  // those removed from `beforeArr`.
   const b = new Set(beforeArr || []);
   const a = new Set(afterArr || []);
   return {
@@ -46,8 +40,6 @@ function deltaSquares(beforeArr, afterArr) {
     removed: [...b].filter(x => !a.has(x)),
   };
 }
-
-function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
 // Side names from a side keyword ("white" / "black").
 function sideCap(s)  { return s === 'white' ? 'White' : 'Black'; }
@@ -373,7 +365,7 @@ function line_control_change(before, after, out, opts) {
   }
 }
 
-function plan_summary(before, after, out, opts) {
+function plan_summary(before, after, out, _opts) {
   // Engine-derived: when after-blob has a principal_plan with a
   // recognised theme, surface it as a forward-looking consequence.
   const plan = after?.principal_plan;

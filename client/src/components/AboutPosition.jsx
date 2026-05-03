@@ -23,10 +23,6 @@ import React, { useState } from 'react';
 // the full structured detail (every fact, plus the GM narrative,
 // engine plan, and Copy-JSON for LLM hand-off).
 
-function fileLetter(sq) {
-  return sq && typeof sq === 'string' ? sq[0] : '?';
-}
-
 // Each fact is `{ side, importance, text }`. We pull these from the
 // blob and sort by importance descending. Importance is rough — high
 // for game-changing structure (passed pawn, IQP), medium for piece
@@ -312,21 +308,6 @@ function verdictText(cp) {
   if (m < 200) return { side, text: 'is better' };
   if (m < 500) return { side, text: 'has a winning advantage' };
   return { side, text: 'is clearly winning' };
-}
-
-// Detect mate: either the principal_plan says so, or the eval_cp is in the
-// mate-encoded range Stockfish uses (close to ±32000). When there's a
-// forced mate on the board, every "open file" / "more mobility" fact is
-// noise — the mate is the position. Surface it; suppress the rest.
-function mateInN(explanation) {
-  // Engine-augmented blob carries explicit mate info.
-  const m = explanation?.principal_plan?.eval_mate;
-  if (m !== null && m !== undefined && m !== 0) return m;
-  // Static blob may have eval_cp at ±10000 ish if a terminal-state branch
-  // ran. Be conservative — only treat |cp| ≥ 9000 as effective mate.
-  const cp = explanation?.eval_cp ?? 0;
-  if (Math.abs(cp) >= 9000) return cp > 0 ? 1 : -1;
-  return null;
 }
 
 const FACT_COUNT_DEFAULT = 3;
