@@ -81,81 +81,55 @@ fn assert_not(motifs: &[String], id: &str, ctx: &str) {
 
 #[test]
 fn fork_knight_attacks_king_and_queen() {
-    // Knight on c3 forks K (e1)... no wait. Use a fresh position:
-    //   K on e1, Q on a1, knight to c2 attacks king (check) and queen.
-    // We'll use a standard royal fork from a tactics book.
-    //   Black to move: ...Nc2+ forks white K on e1 and rook on a1.
-    let fen = "4k3/8/8/8/8/8/2n5/R3K3 w - - 0 1";
-    // White to move, but we want black's fork. Flip turn:
-    let fen = "4k3/8/8/8/8/8/2n5/R3K3 b - - 0 1";
-    // The knight on c2 already attacks both R/a1 and K/e1. Make a move
-    // that ESTABLISHES the fork.
-    //   Position before: knight on a3, king on c8.
-    //   Nc2+ from a3 → c2 forks rook + king.
+    // Royal fork: black knight on a3, white king on e1, white rook on a1.
+    // Black plays ...Nc2+ — from c2 the knight attacks both the king on
+    // e1 (check) and the rook on a1 (fork target).
     let fen = "2k5/8/8/8/8/n7/8/R3K3 b - - 0 1";
     let motifs = motif_ids(fen, "a3c2");
-    // Knight gives check on the king AND attacks the rook = fork +
-    // discovered/check. Specifically a fork with check.
     assert_has(&motifs, "fork", "royal fork");
     assert_has(&motifs, "check", "royal fork");
 }
 
 #[test]
 fn pin_only_to_strictly_heavier_piece() {
-    // Black bishop on f6, knight on d4, white queen on h2.
-    // Wait — let's construct: white bishop on b5 pins black knight on d7
-    // to the BLACK ROOK on a8? No — knight not in line.
-    // Let's do: white bishop on b5 pins black knight on c6 to BLACK ROOK
-    // on a8 (b5-c6-d7-... no that's not a line). Use diagonal:
-    // bishop on a4 pins knight on b5 to rook on a6? Hmm, need straight line.
-    // Easier: Ra1 pins Nf1 to Re1? They have to be on same line.
-    //
-    // Setup: white rook on a1, black knight on d1, black ROOK on g1.
-    // White rook to e1: pins knight on d1?  No — knight on d1 and rook on
-    // g1 aren't on the same line as a1.
-    //
-    // Use simple FEN: white rook on e1, black king on e8, black knight
-    // on e5. White rook moves to attack knight, pinning it ABSOLUTELY
-    // because of king behind: `pin` should fire.
-    let fen = "4k3/8/8/4n3/8/8/4K3/3R4 w - - 0 1";
-    // Rook on d1 to e1, then up the e-file. Use Re1 directly:
-    //   wait, white king on e2 blocks. Reposition: white K on h1.
+    // Absolute pin to the king. White rook on e1, white king on h1,
+    // black knight on e5, black king on e8. Re1-e3 attacks the knight
+    // along the e-file with the black king directly behind it → pin
+    // must fire (front piece is a knight, rear is the king).
     let fen = "4k3/8/8/4n3/8/8/8/4R2K w - - 0 1";
     let motifs = motif_ids(fen, "e1e3");
-    // Re3 puts rook on e-file with knight on e5 between rook and king.
-    // That's an absolute pin to the king → must fire.
     assert_has(&motifs, "pin", "absolute pin to king");
-
-    // Counter-test: knight in front of bishop on the same diagonal — must
-    // NOT fire because knight ≡ bishop on the bucketed pin scale.
-    // White bishop on b1, black knight on d3, black bishop on f5,
-    // black king on h7. White bishop slides along b1-h7 diagonal? It
-    // can't go to b1 directly without obstruction. Use: white bishop
-    // moves to a square that pins black knight to black bishop.
-    let fen2 = "8/7k/8/5b2/8/3n4/8/B3K3 w - - 0 1";
-    // Bb1 already on diagonal. Move it to c2: same diagonal as before,
-    // nothing changes. Move to a different square that attacks knight
-    // with bishop behind. b1-d3 ray hits knight; bishop on f5 lies
-    // beyond. So Ba1-c3 keeps the alignment. Actually let's just check
-    // the existing alignment from e.g. Ba1-... no, the from square
-    // matters. Skip this counter-test — too fiddly to set up. We
-    // separately tested the bucketed-value logic in the Rust source.
-    let _ = fen2;
 }
 
 #[test]
-fn skewer_strict_value_order() {
+fn queen_on_king_line_is_pin_not_skewer() {
     // Black queen in front of black king on the e-file; white rook
-    // moves to e1 to skewer queen → king.
+    // moves to e1. Front piece (queen, raw value 9) is in front of the
+    // king (bucketed value 100 in the pin/skewer scale).
+    //
+    // For SKEWER the front must be strictly heavier than rear. Queen 9
+    // < King 100 → not a skewer.
+    // For PIN the front must be lighter than rear. Queen 9 < King 100
+    // → absolute pin to the king. Pin should fire, skewer should not.
     let fen = "4k3/4q3/8/8/8/8/8/R5K1 w - - 0 1";
     let motifs = motif_ids(fen, "a1e1");
-    // Queen (front) heavier than king behind by raw value, but king is
-    // strictly heavier on the bucketed pin/skewer scale (king=100).
-    // Wait — for skewer the FRONT must be strictly heavier than rear.
-    // Here front = queen (9), rear = king (100). So queen NOT heavier
-    // than king → skewer should NOT fire. This is actually a pin-to-king
-    // (absolute pin). Adjust: pin should fire.
     assert_has(&motifs, "pin", "queen pinned to king is absolute pin");
+    assert_not(&motifs, "skewer", "front-piece-lighter-than-rear is pin, not skewer");
+}
+
+#[test]
+fn skewer_king_in_front_of_queen() {
+    // White rook on a1 attacks the e-file. Black king on e7 with black
+    // queen on e8 behind it. After Re1 → rook attacks the king on e7;
+    // king must move; rook then wins the queen on e8. Classic skewer:
+    // front piece (king) is more valuable than rear (queen).
+    let fen = "4q3/4k3/8/8/8/8/8/R5K1 w - - 0 1";
+    let motifs = motif_ids(fen, "a1e1");
+    // The check on the king fires first; skewer is also valid because
+    // the king (front, bucketed 100) is heavier than the queen (rear,
+    // bucketed 9).
+    assert_has(&motifs, "skewer", "king-in-front-of-queen is a skewer");
+    assert_has(&motifs, "check", "king is attacked along the e-file");
 }
 
 #[test]
@@ -169,37 +143,17 @@ fn discovered_check_recognised() {
 
 #[test]
 fn double_check_strongest_form() {
-    // White knight on d5 with white rook on d1 behind, black king on d8.
-    // Knight moves to f6 attacking the king AS WELL as unmasking the
-    // rook → double check.
-    // The fen above already produces this. Check the right move:
-    //   Nf6+ — knight attacks d8 from f6? No: from f6 the knight
-    //   attacks d7, e8, g8, h7, etc. Not d8.
-    // Better: knight on e6, rook on e1, king on e8. Knight to c7 keeps
-    // file open AND attacks e8? c7→a8/b5/d5/e8/e6 — yes, c7 attacks e8.
+    // Knight on e6 blocking the e-file, rook on e1 behind it, white king
+    // on f1; black king on e8. After Ne6-c7+:
+    //   - knight from c7 attacks e8 (knight reach from c7 includes e8)
+    //   - moving off the e-file uncovers the rook on e1, which now
+    //     attacks e8 along the now-clear e-file → discovered check
+    // Both checking pieces hit the king on the same turn → double check.
     let fen = "4k3/8/4N3/8/8/8/8/4RK2 w - - 0 1";
     let motifs = motif_ids(fen, "e6c7");
-    // c7 doesn't attack e8 — let me redo: knight on e6 to f8 attacks d7
-    // and h7, not e8. Use d7 directly: knight to d6 → attacks e8? No.
-    // Use a known double check: white knight on e5, white rook on e1,
-    // black king on e8. Nd7+ → from d7 knight attacks e5,f6,b8,c5,b6,f8.
-    // Not e8.
-    //
-    // Need: piece moves giving direct check AND uncovers another check.
-    // Pattern: bishop on c4 + knight on e5 with king on e8. Knight
-    // moves to f7, gives check from f7 (via knight reach: d6,d8,e5,h8,h6).
-    // Hmm. Let me just find a stable double-check setup and use it.
-    //
-    // Known: white queen on d1, knight on d5, king on h1; black king on d8.
-    // Knight from d5 to f6 — Nf6+ from f6 attacks e8 and h7. Not d8.
-    // Alternatively: white bishop on b3, knight on c6, black king on a8.
-    // Knight to b8 (impossible — own piece blockade depending on…)
-    //
-    // Pragmatic fallback: just verify if `double_check` fires in the
-    // simpler "Smith-Morra-like" position where it's known. Skip this
-    // test; doc it as TODO.
-    let _ = fen;
-    let _ = motifs;
+    assert_has(&motifs, "double_check", "Nc7+ from e6 with rook behind is a double check");
+    // Double check subsumes plain check; we only assert double_check
+    // fired (the composer handles the headline phrasing).
 }
 
 // ─── Negative tests (false-positive guards) ──────────────────────────
@@ -290,34 +244,18 @@ fn trades_into_endgame_when_phase_low() {
 
 #[test]
 fn knight_invasion_on_f5_outpost() {
-    // White knight to f5 outpost in opp camp — pawn structure makes f5
-    // an outpost (no enemy pawn challenge).
-    // Setup: black pawns on e6, g6 — these guard f5! So f5 is NOT an
-    // outpost. Try f5 with no e6 pawn:
-    // black pawns on d6, f7, g7. White knight to f5: f5 has no enemy
-    // pawn on e/g/h that can challenge from rank 6 onward. Actually,
-    // f7 pawn can capture on e6/g6, not f5. But pawn on f7 advances
-    // through f6 → f5 if pushed. The outpost test requires NO ENEMY
-    // PAWN ON ADJACENT FILES at higher rank (white POV: rank > knight's
-    // rank). f5 = rank 5; adjacent files e/g; check ranks 6-8. e6 pawn
-    // exists → can play e6-e5? No, can't push backward. e-pawn on e6
-    // covers f5 indirectly only via capture, but it's BEHIND the knight
-    // (rank 6 ≤ knight rank 5? Knight's rank = 5, e-pawn rank = 6,
-    // black POV "behind" = larger rank for white knight at rank 5).
-    // Actually e-pawn on e6 CAN advance: e6→e5 → attacks f4, doesn't
-    // touch f5. The point is: an outpost needs NO ENEMY PAWN that can
-    // CAPTURE into it. e-pawn on e6 can capture diagonally backward to
-    // f5 only if moving forward — it can't. So f5 is safe from e-pawn.
-    // What about g-pawn on g7? Pushing g7-g6 puts pawn on g6 attacking
-    // f5 → so f5 is NOT an outpost while a g7 pawn exists.
-    //
-    // Use: black pawns on c6, d6, e6 only (no g/f/h pawns near king).
-    let fen = "rnbqkb1r/pppp1ppp/4p3/4N3/8/8/PPPPPPPP/RNBQKB1R w KQkq - 0 1";
-    // f5 isn't reachable from anywhere here. Use a different setup:
-    let fen = "rnbqkb1r/pp1p1ppp/2p1pn2/4N3/8/2N5/PPPP1PPP/R1BQKB1R w KQkq - 0 1";
-    // White Ne5 already on e5. Move Nf3 → not central enough.
-    // Just write any legal move and check the motifs we DO get.
-    let _ = fen;
+    // White knight on d4 jumps to f5. f5 is a deep outpost because:
+    //   - rank index 4 (rank 5) → satisfies the "white half ≥ rank 5"
+    //     deep-invasion gate.
+    //   - no black pawn on the e or g files at rank index ≥ 5 (rank 6+).
+    //     Black has pawns only on d6, e5, h7 — none of those can ever
+    //     challenge f5.
+    // The detector should fire `knight_invasion`. The composer drops
+    // the bare `outpost` label when the deeper one fires.
+    let fen = "6k1/7p/3p4/4p3/3N4/8/8/6K1 w - - 0 1";
+    let motifs = motif_ids(fen, "d4f5");
+    assert_has(&motifs, "knight_invasion", "Nf5 is a deep outpost in enemy half");
+    assert_not(&motifs, "outpost", "knight_invasion subsumes plain outpost");
 }
 
 #[test]
