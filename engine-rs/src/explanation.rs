@@ -701,17 +701,45 @@ fn analyse_king_side(board: &Board, color: Color) -> KingSideAnalysis {
                 }
             }
         }
+        // *** Agent-existence gate ***
+        //
+        // The previous version added the file to `open_files_to_king` /
+        // `half_open_files_to_king` purely on geometric grounds (no own
+        // pawn on the file). That fired even when the opponent had no
+        // R/Q anywhere — a king "exposed" on a file no enemy slider can
+        // ever reach is not actually exposed.
+        //
+        // Now: only flag the file when the enemy ACTUALLY has a rook or
+        // queen capable of operating on it (either already there, or
+        // sitting on the file with a clear path of squares it can
+        // travel along). Same generalised principle should be applied
+        // to every "weakness" / "exposure" claim across the analyzer:
+        // a claim must name an agent that can act on it.
         let f_letter = file_letter_string(nf as usize);
+        let enemy_has_slider_on_file = enemy_can_use_file(board, nf as u32, enemy);
+        if !enemy_has_slider_on_file {
+            // Not actionable — the king isn't actually exposed on this
+            // file, however empty it looks.
+            continue;
+        }
         if my_pawns == 0 && their_pawns == 0 { open_files.push(f_letter); }
         else if my_pawns == 0 { half_open.push(f_letter); }
     }
 
-    // Weak diagonals: long diagonals exposed to the king with no shield.
+    // Weak diagonals: long diagonals exposed to the king. Only claim if
+    // the enemy has a B/Q that can actually swing onto that diagonal.
     let mut weak_diags = Vec::new();
     if king_sq == Square::G1 || king_sq == Square::H1
         || king_sq == Square::G8 || king_sq == Square::H8 {
-        // Check h1-a8 / a8-h1 diagonal.
-        weak_diags.push("h1-a8".into());
+        if enemy_has_slider_on_long_diag(board, false /* h1-a8 */, enemy) {
+            weak_diags.push("h1-a8".into());
+        }
+    }
+    if king_sq == Square::A1 || king_sq == Square::B1
+        || king_sq == Square::A8 || king_sq == Square::B8 {
+        if enemy_has_slider_on_long_diag(board, true /* a1-h8 */, enemy) {
+            weak_diags.push("a1-h8".into());
+        }
     }
 
     // Escape squares: empty squares around the king not attacked by enemy.
@@ -953,30 +981,126 @@ fn analyse_line_control(board: &Board) -> LineControl {
     }
 }
 
+/// "Control" of a long diagonal — strict agent + reach test.
+///
+/// Old version counted any B/Q sitting on the diagonal whose attack set
+/// touched ≥ 4 diagonal squares — but that fired in tons of positions
+/// where the diagonal was actually blocked, or where the slider couldn't
+/// reach the squares that matter. The user's complaint: "the controlling
+/// diagonal is faulty."
+///
+/// New criterion: a side controls the diagonal iff it has a B/Q on the
+/// diagonal whose unblocked reach covers most of the long-diagonal
+/// squares (≥ 4 of 8), AND the OPPOSITE side has no comparable presence
+/// on the same diagonal. Blockers belonging to the controlling side
+/// don't count against them, but enemy pieces sitting on the diagonal
+/// neutralise the claim.
 fn control_of_long_diag(board: &Board, a1h8: bool) -> Option<String> {
     let occ = board.occupied();
-    let mut white_pieces = 0;
-    let mut black_pieces = 0;
+    let mut white_reach = 0;
+    let mut black_reach = 0;
+    let mut white_obstructs = 0;
+    let mut black_obstructs = 0;
     for i in 0..8 {
         let f = i as u32;
         let r = if a1h8 { i as u32 } else { (7 - i) as u32 };
         let s = Square::from_coords(File::new(f), Rank::new(r));
-        if let Some(p) = board.piece_at(s) {
-            if matches!(p.role, Role::Bishop | Role::Queen) {
-                let attacks = if p.role == Role::Bishop { bishop_attacks(s, occ) } else { queen_attacks(s, occ) };
-                let count_on_diag = (0..8).filter(|j| {
-                    let s2 = Square::from_coords(File::new(*j as u32), Rank::new(if a1h8 { *j as u32 } else { (7 - *j) as u32 }));
-                    attacks.contains(s2) || s2 == s
-                }).count();
-                if count_on_diag >= 4 {
-                    if p.color == Color::White { white_pieces += 1; } else { black_pieces += 1; }
-                }
-            }
+        let p = match board.piece_at(s) { Some(p) => p, None => continue };
+
+        // A B/Q on the diagonal: count its unblocked diagonal coverage.
+        if matches!(p.role, Role::Bishop | Role::Queen) {
+            let attacks = if p.role == Role::Bishop {
+                bishop_attacks(s, occ)
+            } else {
+                queen_attacks(s, occ)
+            };
+            let on_diag_attacks = (0..8).filter(|j| {
+                let s2 = Square::from_coords(
+                    File::new(*j as u32),
+                    Rank::new(if a1h8 { *j as u32 } else { (7 - *j) as u32 }),
+                );
+                attacks.contains(s2) || s2 == s
+            }).count();
+            // "Control" means ≥ 4 squares of the diagonal are reachable
+            // (including the slider's own square). Less than that = the
+            // slider is just sitting there, blocked.
+            if on_diag_attacks >= 4 {
+                if p.color == Color::White { white_reach += 1; } else { black_reach += 1; }
+            } else if p.color == Color::White { white_obstructs += 1; }
+            else { black_obstructs += 1; }
+        } else {
+            // Any non-slider piece on the diagonal is a blocker — counts
+            // against whichever side it belongs to in terms of fighting
+            // for control.
+            if p.color == Color::White { white_obstructs += 1; }
+            else { black_obstructs += 1; }
         }
     }
-    if white_pieces > 0 && black_pieces == 0 { Some("white".into()) }
-    else if black_pieces > 0 && white_pieces == 0 { Some("black".into()) }
-    else { None }
+
+    // Side has CLEAR control: their slider has the long reach AND the
+    // opponent has no comparable slider AND no enemy obstructs heavily.
+    if white_reach > 0 && black_reach == 0 && black_obstructs <= 2 {
+        Some("white".into())
+    } else if black_reach > 0 && white_reach == 0 && white_obstructs <= 2 {
+        Some("black".into())
+    } else {
+        None
+    }
+}
+
+// ── Agent-existence helpers ─────────────────────────────────────────────
+//
+// General philosophy: any "weakness" or "exposure" claim must name a
+// real piece that can act on it. These helpers wrap the geometry check
+// with an existence check.
+
+/// Does `enemy` have a rook or queen that can operate on file `file`?
+/// "Operate" = either already on that file, or it has a free path to
+/// reach it within ~3 plies (we approximate: any R/Q whose current
+/// attacks intersect the file). This guards `open_files_to_king` so
+/// "exposed on the d-file" only fires when there's something to do
+/// the exposing.
+fn enemy_can_use_file(board: &Board, file: u32, enemy: Color) -> bool {
+    let occ = board.occupied();
+    let enemies = board.by_color(enemy);
+    let rq = (board.rooks() | board.queens()) & enemies;
+    for sq in rq {
+        // Already on the file?
+        if sq.file() as u32 == file { return true; }
+        // Or can reach the file in one move? Get attack set, intersect
+        // with any square on the file, see if it hits.
+        let attacks = match board.piece_at(sq).map(|p| p.role) {
+            Some(Role::Rook) => rook_attacks(sq, occ),
+            Some(Role::Queen) => queen_attacks(sq, occ),
+            _ => continue,
+        };
+        for r in 0..8 {
+            let s = Square::from_coords(File::new(file), Rank::new(r));
+            if attacks.contains(s) { return true; }
+        }
+    }
+    false
+}
+
+/// Does `enemy` have a bishop or queen that can operate on the long
+/// diagonal? a1h8=true means a1-h8 (dark squares), false means h1-a8
+/// (light squares).
+fn enemy_has_slider_on_long_diag(board: &Board, a1h8: bool, enemy: Color) -> bool {
+    let occ = board.occupied();
+    let enemies = board.by_color(enemy);
+    let bq = (board.bishops() | board.queens()) & enemies;
+    for sq in bq {
+        let role = match board.piece_at(sq).map(|p| p.role) { Some(r) => r, None => continue };
+        let attacks = if role == Role::Bishop { bishop_attacks(sq, occ) } else { queen_attacks(sq, occ) };
+        // Already on the diagonal, or attacks one of its squares.
+        for i in 0..8 {
+            let f = i as u32;
+            let r = if a1h8 { i as u32 } else { (7 - i) as u32 };
+            let s = Square::from_coords(File::new(f), Rank::new(r));
+            if attacks.contains(s) || sq == s { return true; }
+        }
+    }
+    false
 }
 
 // ── Tactics ─────────────────────────────────────────────────────────────

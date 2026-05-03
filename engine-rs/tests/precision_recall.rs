@@ -236,6 +236,32 @@ const CORPUS: &[Entry] = &[
         must_not_fire: &[],
         description: "Nb6 attacks Ra8 with no defender → threatens the rook",
     },
+
+    // ── SEE correctness: defended pawns must NOT be flagged as hanging ──
+    // Previously the SEE fold-back ran one extra iteration, producing
+    // wrong-sign results for defended-pawn captures. This entry locks
+    // the fix in: White's e4 pawn, attacked by Black's f5 pawn AND
+    // defended by White's d3 pawn — pawn-for-pawn trade is even,
+    // pawn is NOT hanging. Move is a quiet tempo by White's king.
+    Entry {
+        fen: "4k3/8/8/5p2/4P3/3P4/8/4K3 w - - 0 1",
+        mv: "e1d2",
+        must_fire: &[],
+        must_not_fire: &["hangs", "sacrifice"],
+        description: "Defended pawn (1 atk, 1 def, both pawns) — must NOT be hanging",
+    },
+
+    // ── Same SEE invariant with stronger defenders ─────────────────────
+    // White e4 pawn defended by knight on d2 + bishop on c2 + queen on
+    // d1, attacked by black knight on f6. Knight-for-pawn = -200 for
+    // black; pawn safely defended.
+    Entry {
+        fen: "4k3/8/5n2/8/4P3/8/2BNQ3/4K3 b - - 0 1",
+        mv: "e8d8",
+        must_fire: &[],
+        must_not_fire: &["hangs"],
+        description: "Pawn over-defended (pawn + 3 minors/queens), 1 knight attacker — not hanging",
+    },
 ];
 
 // ── Harness ─────────────────────────────────────────────────────────────
