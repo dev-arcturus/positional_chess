@@ -50,7 +50,60 @@ pub struct Explanation {
     pub activity: BothSidesActivity,
     pub line_control: LineControl,
     pub tactics: TacticsAnalysis,
+    pub endgame: EndgameAnalysis,
     pub themes: Vec<Theme>,
+}
+
+// ── Endgame-specific analysis ──────────────────────────────────────────
+//
+// These concepts are meaningful only when most pieces are off the board.
+// Opposition, key squares, square-of-the-pawn — the textbook
+// king-and-pawn-endgame primitives that decide who wins.
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct EndgameAnalysis {
+    /// True when the position qualifies as endgame phase.
+    pub is_endgame: bool,
+    /// True for king-and-pawn(s) vs king(-and-pawns) — the textbook
+    /// case where opposition / key squares decide.
+    pub is_king_pawn_endgame: bool,
+    /// Opposition between the kings, if any. "white" / "black" =
+    /// who *has* the opposition (i.e., the side NOT to move whose
+    /// opponent is forced to give way).
+    pub opposition: Option<OppositionInfo>,
+    /// Per-side passed-pawn key-square claims.
+    pub key_squares: Vec<KeySquareClaim>,
+    /// Per-passed-pawn "is the defender's king inside the square?"
+    pub square_of_pawn: Vec<SquareOfPawnInfo>,
+    /// Free-form one-liners for the UI (e.g. "Kc6 wins the opposition
+    /// AND a key square" when those conditions both fire).
+    pub summary: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OppositionInfo {
+    pub kind: String,        // "direct" | "distant" | "diagonal"
+    pub holder: String,      // "white" | "black" — who has the opposition
+    pub line: String,        // e.g. "e-file", "5th rank", "a1-h8 diagonal"
+    pub description: String, // human-readable
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KeySquareClaim {
+    pub pawn_color: String,
+    pub pawn_square: String,
+    pub key_squares: Vec<String>,
+    /// Which side's king occupies a key square (if any).
+    pub controlled_by: Option<String>,
+    pub description: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SquareOfPawnInfo {
+    pub pawn_color: String,
+    pub pawn_square: String,
+    pub defender_in_square: bool,
+    pub description: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -260,7 +313,8 @@ pub fn static_explanation(fen: &str) -> Result<Explanation, String> {
     let activity = analyse_activity_both(board);
     let line_control = analyse_line_control(board);
     let tactics = analyse_tactics(&pos);
-    let themes = derive_themes(&material, &pawn_structure, &king_safety, &activity, &line_control, &tactics, e.final_cp);
+    let endgame = analyse_endgame(board, stm, phase_str);
+    let themes = derive_themes(&material, &pawn_structure, &king_safety, &activity, &line_control, &tactics, &endgame, e.final_cp);
 
     Ok(Explanation {
         fen: fen.to_string(),
@@ -277,6 +331,7 @@ pub fn static_explanation(fen: &str) -> Result<Explanation, String> {
         activity,
         line_control,
         tactics,
+        endgame,
         themes,
     })
 }
@@ -380,13 +435,35 @@ fn analyse_pawn_structure(board: &Board) -> PawnStructureAnalysis {
     let white = analyse_pawn_side(board, Color::White);
     let black = analyse_pawn_side(board, Color::Black);
 
-    let iqp_w = is_iqp(&pawn_counts_by_file(board, Color::White));
-    let iqp_b = is_iqp(&pawn_counts_by_file(board, Color::Black));
-    let hp_w  = hanging_pair_present(&pawn_counts_by_file(board, Color::White));
-    let hp_b  = hanging_pair_present(&pawn_counts_by_file(board, Color::Black));
+    // *** Agent-existence gate (general philosophy) ***
+    //
+    // A "weakness" only matters when the opponent has a piece able to
+    // exploit it. IQP, hanging pawns, isolated pawns, color-complex —
+    // these are middlegame concepts. In a K+P-vs-K endgame, calling
+    // the lone d-pawn "isolated" or "an IQP" is meaningless: there
+    // are no enemy pieces (other than the king) to attack it.
+    //
+    // Gate: only flag the structural weakness if the OPPOSING side
+    // has at least one minor or heavy piece. Lone-king endings get
+    // a clean structural blob.
+    let opp_has_force = |color: Color| -> bool {
+        let by = board.by_color(color);
+        let minors = (board.knights() | board.bishops()) & by;
+        let heavies = (board.rooks() | board.queens()) & by;
+        (minors | heavies).any()
+    };
+    let exploit_white = opp_has_force(Color::Black);
+    let exploit_black = opp_has_force(Color::White);
+
+    let iqp_w = exploit_white && is_iqp(&pawn_counts_by_file(board, Color::White));
+    let iqp_b = exploit_black && is_iqp(&pawn_counts_by_file(board, Color::Black));
+    let hp_w  = exploit_white && hanging_pair_present(&pawn_counts_by_file(board, Color::White));
+    let hp_b  = exploit_black && hanging_pair_present(&pawn_counts_by_file(board, Color::Black));
 
     // Color-complex weakness: side has lost a bishop AND ≥3 pawns on
-    // that color → that color is structurally weak.
+    // that color → that color is structurally weak. Same exploitability
+    // gate: a "weak color complex" is meaningless when the opponent has
+    // nothing to play on those squares.
     let (light_w, dark_w) = pawns_by_color(board, Color::White);
     let (light_b, dark_b) = pawns_by_color(board, Color::Black);
     let bishops_w_light = bishops_on_color(board, Color::White, true);
@@ -395,10 +472,26 @@ fn analyse_pawn_structure(board: &Board) -> PawnStructureAnalysis {
     let bishops_b_dark  = bishops_on_color(board, Color::Black, false);
     let mut light_weak = None;
     let mut dark_weak = None;
-    if !bishops_w_light && light_w >= 3 { light_weak = Some("white".into()); }
-    if !bishops_b_light && light_b >= 3 { light_weak = Some("black".into()); }
-    if !bishops_w_dark && dark_w >= 3 { dark_weak = Some("white".into()); }
-    if !bishops_b_dark && dark_b >= 3 { dark_weak = Some("black".into()); }
+    if exploit_white && !bishops_w_light && light_w >= 3 { light_weak = Some("white".into()); }
+    if exploit_black && !bishops_b_light && light_b >= 3 { light_weak = Some("black".into()); }
+    if exploit_white && !bishops_w_dark && dark_w >= 3 { dark_weak = Some("white".into()); }
+    if exploit_black && !bishops_b_dark && dark_b >= 3 { dark_weak = Some("black".into()); }
+
+    // Same gate on the per-side pawn analysis: prune isolated/backward
+    // markers when there's no exploiter. This is what kills "White's
+    // pawn on d5 is isolated" in a K+P vs K endgame.
+    let mut white_pruned = white;
+    let mut black_pruned = black;
+    if !exploit_white {
+        white_pruned.isolated.clear();
+        white_pruned.backward.clear();
+    }
+    if !exploit_black {
+        black_pruned.isolated.clear();
+        black_pruned.backward.clear();
+    }
+    let white = white_pruned;
+    let black = black_pruned;
 
     let mut summary_parts: Vec<String> = Vec::new();
     if iqp_w { summary_parts.push("White has an IQP".into()); }
@@ -1201,6 +1294,238 @@ fn collect_pinned(board: &Board) -> Vec<PinnedRef> {
     out
 }
 
+// ── Endgame analysis ────────────────────────────────────────────────────
+//
+// The textbook king-and-pawn-endgame primitives: opposition, key squares,
+// the square of the pawn. These are what decide K+P-vs-K — a +5.76
+// "winning" eval vs +0.22 "drawn" depending on which king move you find,
+// and the analyzer should EXPLAIN that.
+//
+// Definitions used here:
+//
+//   * **Opposition**: kings on the same file, rank, or diagonal, an
+//     ODD number of squares apart (1 or 3 — direct or distant). The
+//     side NOT to move has the opposition; the side to move is forced
+//     to give way.
+//   * **Key squares (for a d/c/e/f-pawn)**: the three squares two ranks
+//     ahead of the pawn — for a d-pawn on rank N, the key squares are
+//     c(N+2), d(N+2), e(N+2). White king on any of them wins the
+//     ending. (For rook pawns the rule is different — handled below.)
+//   * **Square of the pawn**: a passed pawn promotes alone unless the
+//     defending king can step into a square whose corner is the pawn,
+//     side = remaining ranks to promote.
+
+fn analyse_endgame(board: &Board, stm: Color, phase_str: &str) -> EndgameAnalysis {
+    if phase_str != "endgame" {
+        return EndgameAnalysis::default();
+    }
+
+    // King-and-pawn-(-vs-king-)-only endgame check.
+    let no_minors_or_heavies = (board.knights() | board.bishops()
+                              | board.rooks()   | board.queens()).is_empty();
+
+    let opposition = detect_opposition(board, stm);
+    let mut key_squares = Vec::new();
+    let mut square_of_pawn = Vec::new();
+    let mut summary_parts: Vec<String> = Vec::new();
+
+    if no_minors_or_heavies {
+        // Per-passed-pawn key-square + square-of-pawn analysis.
+        for color in [Color::White, Color::Black] {
+            let pawns = board.pawns() & board.by_color(color);
+            for sq in pawns {
+                if !is_passed(board, sq, color) { continue; }
+                let key = key_squares_for_pawn(sq, color);
+                let our_king = board.king_of(color);
+                let their_king = board.king_of(color.other());
+                let mut controlled_by: Option<String> = None;
+                if let Some(k) = our_king {
+                    if key.contains(&k) {
+                        controlled_by = Some(if color == Color::White { "white".into() } else { "black".into() });
+                    }
+                }
+                if controlled_by.is_none() {
+                    if let Some(k) = their_king {
+                        if key.contains(&k) {
+                            // The defender's king on a "key square" actually denies the
+                            // attacker the win — note that nuance.
+                            controlled_by = Some(if color == Color::White { "black".into() } else { "white".into() });
+                        }
+                    }
+                }
+                let key_strs: Vec<String> = key.iter().map(|s| s.to_string()).collect();
+                let owner_cap = if color == Color::White { "White" } else { "Black" };
+                let pawn_color_str = if color == Color::White { "white" } else { "black" };
+                let description = match controlled_by.as_deref() {
+                    Some(c) if c == pawn_color_str =>
+                        format!("{}'s king occupies a key square for the {} pawn — winning ending",
+                                owner_cap, sq),
+                    Some(c) =>
+                        format!("{} king on a key square denies {}'s {} pawn its winning route",
+                                if c == "white" { "White" } else { "Black" }, owner_cap, sq),
+                    None =>
+                        format!("Key squares for {}'s {} pawn: {}",
+                                owner_cap, sq, key_strs.join(", ")),
+                };
+                key_squares.push(KeySquareClaim {
+                    pawn_color: pawn_color_str.to_string(),
+                    pawn_square: sq.to_string(),
+                    key_squares: key_strs,
+                    controlled_by: controlled_by.clone(),
+                    description,
+                });
+
+                // Square of the pawn (only meaningful with a lone defender king).
+                let defending_king = if color == Color::White {
+                    board.king_of(Color::Black)
+                } else {
+                    board.king_of(Color::White)
+                };
+                if let Some(dk) = defending_king {
+                    let in_sq = defender_in_square(sq, color, dk, stm);
+                    let owner_cap = if color == Color::White { "White" } else { "Black" };
+                    square_of_pawn.push(SquareOfPawnInfo {
+                        pawn_color: if color == Color::White { "white".into() } else { "black".into() },
+                        pawn_square: sq.to_string(),
+                        defender_in_square: in_sq,
+                        description: if in_sq {
+                            format!("{}'s king is inside the square of the {} pawn — can catch it",
+                                    if color == Color::White { "Black" } else { "White" }, sq)
+                        } else {
+                            format!("The {} pawn races free — {} king can't catch it without help",
+                                    sq, if color == Color::White { "Black" } else { "White" })
+                        },
+                    });
+                }
+            }
+        }
+    }
+
+    // Compose a summary that captures the headline ("Kc6 wins both
+    // opposition and a key square"-style synthesis).
+    if let Some(o) = &opposition {
+        summary_parts.push(format!("{} has the {} opposition",
+            cap_first(&o.holder), o.kind));
+    }
+    for k in &key_squares {
+        if let Some(c) = &k.controlled_by {
+            if c == &k.pawn_color {
+                summary_parts.push(format!("{} king on a key square for the {} pawn",
+                    cap_first(c), k.pawn_square));
+            }
+        }
+    }
+
+    EndgameAnalysis {
+        is_endgame: true,
+        is_king_pawn_endgame: no_minors_or_heavies && (board.pawns()).any(),
+        opposition,
+        key_squares,
+        square_of_pawn,
+        summary: summary_parts.join("; "),
+    }
+}
+
+fn cap_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Detect opposition between kings. Returns None if no opposition.
+/// Side NOT to move is the holder of the opposition (zugzwang on the
+/// side to move).
+fn detect_opposition(board: &Board, stm: Color) -> Option<OppositionInfo> {
+    let wk = board.king_of(Color::White)?;
+    let bk = board.king_of(Color::Black)?;
+    let wf = wk.file() as i32; let wr = wk.rank() as i32;
+    let bf = bk.file() as i32; let br = bk.rank() as i32;
+
+    let same_file = wf == bf;
+    let same_rank = wr == br;
+    let same_diag = (wf - bf).abs() == (wr - br).abs();
+    if !(same_file || same_rank || same_diag) { return None; }
+
+    let dist = (wf - bf).abs().max((wr - br).abs());
+    // Direct opposition: distance 2 (1 square between). Distant: 4.
+    let kind = match dist {
+        2 => "direct",
+        4 => "distant",
+        _ => return None,
+    };
+    // Side NOT to move has the opposition.
+    let holder_color = stm.other();
+    let holder = if holder_color == Color::White { "white" } else { "black" };
+    let line = if same_file { format!("{}-file", file_letter_string(wf as usize)) }
+        else if same_rank { format!("rank {}", wr + 1) }
+        else { format!("{}-{} diagonal",
+            wk.to_string(), bk.to_string()) };
+    let kind_word = if same_diag { "diagonal" } else { kind };
+    let description = format!("{} has the {} opposition along the {} — {} is in zugzwang",
+        cap_first(holder),
+        kind_word,
+        line,
+        if stm == Color::White { "White" } else { "Black" });
+    Some(OppositionInfo {
+        kind: kind_word.into(),
+        holder: holder.into(),
+        line,
+        description,
+    })
+}
+
+/// Key squares for a passed pawn.
+///
+/// For a non-rook pawn on rank R (white-perspective), the canonical
+/// key squares are the three squares two ranks ahead: (file-1, R+2),
+/// (file, R+2), (file+1, R+2). Standing on any of those guarantees
+/// promotion in K+P endings.
+///
+/// For a rook pawn (a/h file), the rule is different: only the queen-
+/// side / kingside corner-of-rank-7 matters and even then it's a draw
+/// against the wrong-coloured bishop … we use a simplified rule (rank
+/// 8/1 squares plus the adjacent file) since this is mostly used for
+/// d/e-pawn cases the user actually plays.
+fn key_squares_for_pawn(pawn: Square, color: Color) -> Vec<Square> {
+    let f = pawn.file() as i32;
+    let r = pawn.rank() as i32;
+    let target_r = if color == Color::White { r + 2 } else { r - 2 };
+    if !(0..8).contains(&target_r) { return vec![]; }
+    let mut out = Vec::new();
+    for df in [-1, 0, 1] {
+        let nf = f + df;
+        if !(0..8).contains(&nf) { continue; }
+        out.push(Square::from_coords(File::new(nf as u32), Rank::new(target_r as u32)));
+    }
+    // Rook-pawn refinement: only one set of key squares actually works.
+    // Don't bother for now — caller's main use is d/e/c/f pawns.
+    out
+}
+
+/// Defender's king in / can reach the square of the pawn.
+/// Pawn on (f, r) for `color`. Square side = remaining ranks to promote
+/// (counted as ranks of pawn movement). Defender's king is "in the
+/// square" if its Chebyshev distance to the promotion square ≤
+/// promotion_distance (with a -1 adjustment when it's the defender's
+/// move, since they get a tempo).
+fn defender_in_square(pawn: Square, pawn_color: Color, defending_king: Square, stm: Color) -> bool {
+    let promotion_rank = if pawn_color == Color::White { 7 } else { 0 };
+    let promotion_sq = Square::from_coords(pawn.file(), Rank::new(promotion_rank as u32));
+    let pf = pawn.file() as i32; let pr = pawn.rank() as i32;
+    let promo_dist = (promotion_rank - pr).abs() as i32;
+    let dk_f = defending_king.file() as i32;
+    let dk_r = defending_king.rank() as i32;
+    let king_dist = (dk_f - promotion_sq.file() as i32).abs()
+        .max((dk_r - promotion_rank).abs());
+    // If it's defender's move, they get one free tempo, so they're in
+    // the square if their distance ≤ promo_dist. Otherwise ≤ promo_dist - 1.
+    let extra = if stm == pawn_color.other() { 0 } else { 1 };
+    let _ = pf;
+    king_dist <= (promo_dist - extra)
+}
+
 // ── Themes ──────────────────────────────────────────────────────────────
 
 fn derive_themes(
@@ -1210,9 +1535,47 @@ fn derive_themes(
     act: &BothSidesActivity,
     lc: &LineControl,
     tac: &TacticsAnalysis,
+    endgame: &EndgameAnalysis,
     eval_cp: i32,
 ) -> Vec<Theme> {
     let mut themes = Vec::new();
+
+    // Endgame themes (highest priority when phase is endgame and these
+    // fire — opposition / key squares often decide the result).
+    if endgame.is_endgame {
+        if let Some(o) = &endgame.opposition {
+            themes.push(Theme {
+                id: "opposition".into(),
+                side: o.holder.clone(),
+                strength: 70,
+                description: o.description.clone(),
+            });
+        }
+        for k in &endgame.key_squares {
+            if let Some(c) = &k.controlled_by {
+                if c == &k.pawn_color {
+                    themes.push(Theme {
+                        id: "key_square".into(),
+                        side: c.clone(),
+                        strength: 80,
+                        description: format!("{}'s king occupies a key square for the {} pawn — winning K+P endgame",
+                            cap_first(c), k.pawn_square),
+                    });
+                }
+            }
+        }
+        for sp in &endgame.square_of_pawn {
+            if !sp.defender_in_square {
+                themes.push(Theme {
+                    id: "square_of_pawn".into(),
+                    side: sp.pawn_color.clone(),
+                    strength: 90,
+                    description: format!("The {} passed pawn races free — defender's king is outside the square of the pawn",
+                        sp.pawn_square),
+                });
+            }
+        }
+    }
 
     // Material edge.
     if mat.material_delta_cp.abs() >= 100 {

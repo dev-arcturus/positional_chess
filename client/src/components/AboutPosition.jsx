@@ -247,6 +247,52 @@ function extractFacts(blob) {
     });
   }
 
+  // ── Endgame concepts (opposition / key squares / square of the pawn) ──
+  // These are the headlines in K+P endings and similar — the difference
+  // between Kc6 (+5.76) and Kb4 (+0.22) in the user's textbook position.
+  // High importance because a single one of these typically decides the
+  // result, more than any number of middlegame markers.
+  const eg = blob.endgame || {};
+  if (eg.opposition) {
+    facts.push({
+      side: eg.opposition.holder,
+      importance: 88,
+      text: eg.opposition.description,
+    });
+  }
+  for (const k of eg.key_squares || []) {
+    if (k.controlled_by === k.pawn_color) {
+      facts.push({
+        side: k.pawn_color,
+        importance: 92,
+        text: `${k.pawn_color === 'white' ? 'White' : 'Black'}'s king occupies a key square for the ${k.pawn_square} pawn — winning K+P ending`,
+      });
+    } else if (k.controlled_by) {
+      facts.push({
+        side: k.controlled_by,
+        importance: 80,
+        text: `${k.controlled_by === 'white' ? 'White' : 'Black'}'s king holds a key square against the ${k.pawn_square} pawn — denies the win`,
+      });
+    } else if ((eg.key_squares || []).length === 1) {
+      // Lone passer: surface the key squares so the user can see what
+      // to aim for.
+      facts.push({
+        side: k.pawn_color,
+        importance: 65,
+        text: `Key squares for the ${k.pawn_square} pawn: ${k.key_squares.join(', ')} — reach one to win`,
+      });
+    }
+  }
+  for (const sp of eg.square_of_pawn || []) {
+    if (!sp.defender_in_square) {
+      facts.push({
+        side: sp.pawn_color,
+        importance: 95,
+        text: `The ${sp.pawn_square} pawn races free — defender's king is outside the square of the pawn`,
+      });
+    }
+  }
+
   // Sort by importance descending, then dedupe by text.
   const seen = new Set();
   return facts
