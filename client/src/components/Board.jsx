@@ -121,6 +121,39 @@ const RANDOM_POSITIONS_FALLBACK = [
   '6k1/5ppp/8/8/8/2Q5/5PPP/4R1K1 w - - 0 1',
 ];
 
+// Tone palette for move-character pills shown under each top move.
+// Restrained — different hues for different move types but all on the
+// same low-saturation level so the row doesn't become a christmas tree.
+function characterColor(label) {
+  switch (label) {
+    case 'Aggressive': return '#fca5a5'; // sharp red
+    case 'Combative':  return '#fdba74'; // amber
+    case 'Forcing':    return '#fde68a'; // yellow
+    case 'Risky':      return '#f9a8d4'; // pink
+    case 'Drawish':    return '#a1a1aa'; // grey
+    case 'Positional': return '#86efac'; // green
+    case 'Solid':      return '#7dd3fc'; // sky
+    case 'Quiet':      return '#71717a';
+    default:           return '#a1a1aa';
+  }
+}
+function characterBorder(label) {
+  // Same hue as the text colour but at lower alpha. Browsers don't
+  // give us alpha shorthand from a hex string, so just use rgba()
+  // from the same ramp.
+  switch (label) {
+    case 'Aggressive': return 'rgba(248,113,113,0.30)';
+    case 'Combative':  return 'rgba(253,186,116,0.30)';
+    case 'Forcing':    return 'rgba(253,224,71,0.30)';
+    case 'Risky':      return 'rgba(244,114,182,0.30)';
+    case 'Drawish':    return 'rgba(161,161,170,0.25)';
+    case 'Positional': return 'rgba(74,222,128,0.30)';
+    case 'Solid':      return 'rgba(125,211,252,0.30)';
+    case 'Quiet':      return 'rgba(82,82,91,0.30)';
+    default:           return 'rgba(161,161,170,0.25)';
+  }
+}
+
 // Fallback retained for safety; preferred path goes through the imported
 // `pickRandomPosition` from positions.js.
 function pickRandomPositionFallback() {
@@ -1598,17 +1631,85 @@ export default function Board() {
                     </span>
                   </div>
 
-                  {move.tagline && (
-                    <div style={{
-                      marginTop: '3px',
-                      marginLeft: '26px',
-                      fontSize: '11px',
-                      color: '#a1a1aa',
-                      lineHeight: 1.35,
-                    }}>
-                      {move.tagline}
-                    </div>
-                  )}
+                  {(() => {
+                    // Cross-reference the move's enriched annotation
+                    // from posExplanation.engine_top_moves (built by
+                    // buildFullExplanation). Both arrays share the same
+                    // multi-PV results via the engine's LRU cache, so
+                    // index alignment is reliable; we additionally
+                    // match by UCI in case of races.
+                    const enriched = (posExplanation?.engine_top_moves || [])
+                      .find(em => em.uci === move.move) || null;
+                    return (
+                      <>
+                        {/* Character pill + plan brief — calm,
+                            monochrome, restrained. Shows under the
+                            move's rank-row. */}
+                        {(enriched?.character || move.tagline) && (
+                          <div style={{
+                            marginTop: '3px',
+                            marginLeft: '26px',
+                            display: 'flex',
+                            alignItems: 'baseline',
+                            gap: '6px',
+                            flexWrap: 'wrap',
+                            fontSize: '11px',
+                            color: '#a1a1aa',
+                            lineHeight: 1.35,
+                          }}>
+                            {enriched?.character && enriched.character !== 'Quiet' && (
+                              <span
+                                title={enriched.character_reason || ''}
+                                style={{
+                                  fontSize: '9px',
+                                  fontWeight: 700,
+                                  letterSpacing: '0.06em',
+                                  textTransform: 'uppercase',
+                                  color: characterColor(enriched.character),
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  border: '1px solid ' + characterBorder(enriched.character),
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0,
+                                }}>
+                                {enriched.character}
+                              </span>
+                            )}
+                            {move.tagline && (
+                              <span style={{ flex: 1, minWidth: 0 }}>{move.tagline}</span>
+                            )}
+                          </div>
+                        )}
+                        {/* Plan brief — what THIS move sets up over the
+                            next few plies. Only shown when the engine's
+                            forward-walk produces a meaningful theme
+                            (kingside attack / simplification / piece
+                            activity / pawn advance / etc.). */}
+                        {enriched?.plan_brief && (
+                          <div style={{
+                            marginTop: '2px',
+                            marginLeft: '26px',
+                            fontSize: '10px',
+                            color: '#71717a',
+                            fontStyle: 'italic',
+                            lineHeight: 1.4,
+                          }}>
+                            ↪ {enriched.plan_brief}
+                            {enriched.plan_pv && enriched.plan_pv.length > 0 && (
+                              <span style={{
+                                marginLeft: '6px',
+                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                                fontStyle: 'normal',
+                                color: '#52525b',
+                              }}>
+                                ({enriched.plan_pv.slice(0, 3).join(' ')})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {selectedMoveIndex === idx && Array.isArray(move.pvLine) && move.pvLine.length > 1 && (
                     <div style={{

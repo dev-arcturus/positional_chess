@@ -55,10 +55,30 @@ export async function buildFullExplanation(fen, opts = {}) {
   }
   if (!engineRes || !Array.isArray(engineRes.moves)) return staticBlob;
 
-  // ── Annotate each top move with motifs ──────────────────────────────
-  const annotatedMoves = engineRes.moves.map(m => {
+  // ── Annotate each top move with motifs + a per-move plan brief ─────
+  //
+  // For each top engine move, we walk its principal variation (the
+  // engine's preferred continuation for THIS specific candidate) and
+  // produce:
+  //   - `plan_theme`: dominant motif category across the PV
+  //     (kingside_attack / simplification / piece_activity / pawn_advance
+  //      / tactics / consolidation / structural)
+  //   - `plan_brief`: a one-line forward-looking description showing
+  //     what THIS move sets up over the next few plies
+  //   - `character`: the move's tone — "Aggressive" / "Combative" /
+  //     "Positional" / "Solid" / "Risky" / "Forcing" / "Drawish".
+  //     A label answering "what kind of move is this?"
+  //
+  // The character classification combines the move's own motifs with
+  // the engine's view of the opponent's reply (multi-PV[0] vs the
+  // current eval) — a move whose best opp reply still leaves us much
+  // better is forcing; a sharp tactical with a real swing is
+  // aggressive; a quiet structural is positional.
+  const annotatedMoves = engineRes.moves.map((m, idx) => {
     const result = analyzeMove(fen, m.move);
     const motifIds = (result?.motifs || []).map(x => x.id);
+    const planBrief = inferPlanBrief(fen, m.pv || [], motifIds, attackingSideOf(fen));
+    const character = classifyCharacter(motifIds, m, idx, engineRes.moves);
     return {
       uci: m.move,
       san: result?.san || m.move,
@@ -68,6 +88,11 @@ export async function buildFullExplanation(fen, opts = {}) {
       // Targets-king flag: any motif that's a king-attack signal.
       targetsKing: motifIds.some(id => KING_ATTACK_MOTIFS.has(id)),
       headline: result?.motifs?.[0]?.phrase || null,
+      plan_theme: planBrief.theme,
+      plan_brief: planBrief.text,
+      plan_pv: planBrief.pv,
+      character: character.label,
+      character_reason: character.reason,
     };
   });
 
@@ -176,6 +201,75 @@ export async function buildFullExplanation(fen, opts = {}) {
   };
 
   staticBlob.engine_top_moves = annotatedMoves;
+
+  // ── Zugzwang detection (engine-aware) ───────────────────────────────
+  //
+  // Zugzwang = side-to-move would prefer to pass; every legal move
+  // worsens their position. We approximate by comparing:
+  //   - engine's score for STM's BEST move (score after that move,
+  //     from STM's POV)
+  //   - the position's static eval (what STM had right now, before
+  //     they had to commit to a move)
+  //
+  // If the best-move's score is meaningfully WORSE for STM than the
+  // current static eval (≥ 50 cp drop), it indicates the move
+  // requirement itself is the problem — i.e., zugzwang.
+  //
+  // We only fire when the position is also low-piece (endgame) since
+  // zugzwang in middlegames is rare and harder to verify statically.
+  const stmIsWhite = stm === 'w';
+  const stmStaticCp = stmIsWhite ? (staticBlob.eval_cp || 0) : -(staticBlob.eval_cp || 0);
+  const bestRaw = annotatedMoves[0]?.score ?? null;
+  const bestStmCp = bestRaw !== null
+    ? (stmIsWhite ? bestRaw : -bestRaw)
+    : null;
+  if (bestStmCp !== null && stmStaticCp - bestStmCp >= 50 && staticBlob.phase === 'endgame') {
+    const stmCap = stmIsWhite ? 'White' : 'Black';
+    const drop = ((stmStaticCp - bestStmCp) / 100).toFixed(2);
+    staticBlob.themes.push({
+      id: 'zugzwang',
+      side: stmIsWhite ? 'black' : 'white',
+      strength: 80,
+      description: `${stmCap} is in zugzwang — every move concedes (best move drops ${drop} pawns from the static eval)`,
+    });
+  }
+
+  // ── Zwischenzug detection ───────────────────────────────────────────
+  //
+  // A Zwischenzug ("in-between move") is an intermediate move — usually
+  // a check, a heavier capture, or a stronger threat — inserted into
+  // what looked like a forced sequence. Classic case: side captures
+  // expecting recapture, but opponent plays a check first.
+  //
+  // We flag the principal plan's PV[1] as a Zwischenzug iff:
+  //   - PV[0] (our move) was a CAPTURE, and
+  //   - PV[1] (opp's response) is NOT the recapture on PV[0].to,
+  //     but instead a check / capture / discovered_check.
+  //
+  // This is heuristic — only fires when both conditions clearly hold.
+  if (planSteps.length >= 2) {
+    const ourMove = planSteps[0];
+    const oppReply = planSteps[1];
+    const ourMoveIsCapture = (ourMove?.motifs || []).some(m =>
+      ['capture','piece_trade','queen_trade','simplifies','exchange_sacrifice'].includes(m));
+    const oppRecaptured = oppReply?.to === ourMove?.to;
+    const oppIntermezzo = (oppReply?.motifs || []).some(m =>
+      ['check','discovered_check','double_check','capture','threatens',
+       'fork','pin','skewer','removes_defender'].includes(m));
+    if (ourMoveIsCapture && !oppRecaptured && oppIntermezzo) {
+      staticBlob.principal_plan.zwischenzug = {
+        ply: 2,
+        san: oppReply.san,
+        description: `Zwischenzug — ${oppReply.san} is an in-between move that gains time before the recapture`,
+      };
+      staticBlob.themes.push({
+        id: 'zwischenzug',
+        side: stmIsWhite ? 'black' : 'white',
+        strength: 70,
+        description: `Watch for the Zwischenzug ${oppReply.san} — opponent inserts ${oppReply.san} before recapturing`,
+      });
+    }
+  }
 
   // ── GM-style narrative ──────────────────────────────────────────────
   // Compose a structured paragraph from the now-complete blob. This is
@@ -412,4 +506,149 @@ function composeNarrative(blob) {
 }
 
 export { composeNarrative };
+
+// ───────────────────────────────────────────────────────────────────────────
+// Helpers — per-move plan briefs and character labels.
+// ───────────────────────────────────────────────────────────────────────────
+
+function attackingSideOf(fen) {
+  const stm = getSideToMove(fen);
+  return stm === 'w' ? 'white' : 'black';
+}
+
+// Walk a single candidate move's principal variation (its tail of
+// engine-preferred continuations from THIS move) and infer:
+//   - `theme`: dominant motif category across the PV ply-set
+//   - `text`: a one-line forward-looking description
+//   - `pv`: the SAN sequence (for display)
+function inferPlanBrief(rootFen, pv, rootMotifIds, rootSide) {
+  if (!Array.isArray(pv) || pv.length === 0) {
+    return { theme: null, text: null, pv: [] };
+  }
+  // Walk up to PLAN_PLIES of the PV, accumulating motif IDs by category.
+  let curFen = rootFen;
+  const planSteps = [];
+  const motifFreq = new Map();
+  // Include the root move's motifs in the count so the plan reflects
+  // what THIS candidate is doing, not just downstream consequences.
+  for (const m of rootMotifIds) {
+    motifFreq.set(m, (motifFreq.get(m) || 0) + 1);
+  }
+  for (let i = 0; i < Math.min(pv.length, PLAN_PLIES); i++) {
+    const uci = pv[i];
+    if (!uci) break;
+    const result = analyzeMove(curFen, uci);
+    if (!result) break;
+    const ids = (result.motifs || []).map(m => m.id);
+    planSteps.push({ san: result.san, motifs: ids });
+    for (const id of ids) motifFreq.set(id, (motifFreq.get(id) || 0) + 1);
+    if (!result.fen_after) break;
+    curFen = result.fen_after;
+  }
+
+  // Theme inference — same buckets used elsewhere.
+  const buckets = {
+    kingside_attack: ['attacks_king','eyes_king_zone','check','discovered_check','double_check','greek_gift','sacrifice','smothered_hint','back_rank_mate_threat','anastasia_mate_threat','bodens_mate_threat','arabian_mate_threat','decisive_combination','fork','pin','skewer','battery'],
+    simplification: ['simplifies','queen_trade','piece_trade','trades_into_endgame','exchange_sacrifice'],
+    piece_activity: ['outpost','centralizes','activates','knight_invasion','rook_lift','rook_seventh','open_file','semi_open_file','doubles_rooks','opens_file_for','opens_diagonal_for','long_diagonal','battery'],
+    pawn_advance:   ['passed_pawn','pawn_breakthrough','promotion','pawn_storm','pawn_break','pawn_lever'],
+    consolidation:  ['defends','prophylaxis','prepares_castling_kingside','prepares_castling_queenside','castles_kingside','castles_queenside','luft','connects_rooks'],
+    structural:     ['iqp_them','hanging_pawns_them','doubled_pawns_them','backward_pawn_them','color_complex_them'],
+  };
+  const tally = {};
+  for (const [bucket, ids] of Object.entries(buckets)) {
+    let n = 0;
+    for (const id of ids) if (motifFreq.has(id)) n += motifFreq.get(id);
+    if (n > 0) tally[bucket] = n;
+  }
+  const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+  if (ranked.length === 0) {
+    return {
+      theme: null,
+      text: planSteps.length >= 2 ? `Engine continuation: ${planSteps.slice(0, 4).map(s => s.san).join(' ')}` : null,
+      pv: planSteps.map(s => s.san),
+    };
+  }
+  const [topBucket] = ranked[0];
+  const sideCap = rootSide === 'white' ? 'White' : 'Black';
+  const text = (() => {
+    switch (topBucket) {
+      case 'kingside_attack': return `Builds ${sideCap}'s attack on the enemy king`;
+      case 'simplification':  return `Steers toward simplification — trades reduce material`;
+      case 'piece_activity':  return `Improves piece activity — better squares for ${sideCap}'s pieces`;
+      case 'pawn_advance':    return `Advances toward promotion — pushes a passed pawn`;
+      case 'consolidation':   return `Consolidates ${sideCap}'s position — king safety + coordination`;
+      case 'structural':      return `Targets the opponent's structural weaknesses`;
+      default: return null;
+    }
+  })();
+  return {
+    theme: topBucket,
+    text,
+    pv: planSteps.map(s => s.san),
+  };
+}
+
+// Classify a move by its tone — the kind of game it sets up. Combines
+// motifs (what the move IS) with engine signals (how forced /
+// committal it is) to label every top-engine move with one of:
+//
+//   "Forcing"    — opp's best reply is significantly worse than their
+//                   second-best (only one good answer)
+//   "Aggressive" — clear king-attack / sacrifice motifs
+//   "Combative"  — creates threats / forks / pins; sharp but not
+//                   king-attack
+//   "Risky"      — sacrifice without confirmed compensation
+//   "Drawish"    — heads into simplification when already equal
+//   "Positional" — outpost / centralization / structural / quiet
+//   "Solid"      — castling / development / consolidation
+//   "Quiet"      — none of the above signals fire
+function classifyCharacter(motifIds, ourMove, idx, allTopMoves) {
+  const has = (id) => motifIds.includes(id);
+  const hasAny = (ids) => ids.some(id => motifIds.includes(id));
+
+  // Sacrifice + king attack → Aggressive.
+  if (hasAny(['greek_gift','sacrifice','decisive_combination','smothered_hint','double_check','back_rank_mate_threat','anastasia_mate_threat','bodens_mate_threat','arabian_mate_threat'])) {
+    return { label: 'Aggressive', reason: 'Sacrifice / direct king attack' };
+  }
+
+  // Strong threat-creating motifs → Combative.
+  if (hasAny(['fork','pin','skewer','discovered_check','traps_piece','removes_defender'])) {
+    return { label: 'Combative', reason: 'Creates a sharp threat the opponent must address' };
+  }
+
+  // Forcing — opp's #1 reply is significantly worse than their #2.
+  // Only meaningful for the TOP engine move (idx 0). For other top
+  // moves we rely on motifs alone.
+  if (idx === 0 && Array.isArray(allTopMoves) && allTopMoves.length >= 2) {
+    const a = allTopMoves[0]?.score ?? 0;
+    const b = allTopMoves[1]?.score ?? 0;
+    // Forcing if best is dramatically better than 2nd-best (≥ 200 cp gap).
+    if (Math.abs(a - b) >= 200) {
+      return { label: 'Forcing', reason: 'Best move dominates alternatives by 2 pawns or more' };
+    }
+  }
+
+  // Simplification + already equal → Drawish.
+  if (hasAny(['simplifies','queen_trade','piece_trade','trades_into_endgame'])) {
+    return { label: 'Drawish', reason: 'Simplifies into an equal-or-clearer position' };
+  }
+
+  // Positional structural play.
+  if (hasAny(['outpost','knight_invasion','rook_lift','rook_seventh','open_file','semi_open_file','opens_file_for','opens_diagonal_for','long_diagonal','centralizes','activates','passed_pawn','pawn_breakthrough','battery','fianchetto'])) {
+    return { label: 'Positional', reason: 'Improves piece position / structural play' };
+  }
+
+  // Solid — castling, development, consolidation.
+  if (hasAny(['castles_kingside','castles_queenside','prepares_castling_kingside','prepares_castling_queenside','connects_rooks','luft','prophylaxis','defends','develops'])) {
+    return { label: 'Solid', reason: 'King safety / consolidation / development' };
+  }
+
+  // Risky — speculative sacrifice / hangs pieces (rare but possible).
+  if (hasAny(['hangs','exchange_sacrifice'])) {
+    return { label: 'Risky', reason: 'Speculative — gives material' };
+  }
+
+  return { label: 'Quiet', reason: 'No specific tactical or structural feature' };
+}
 
