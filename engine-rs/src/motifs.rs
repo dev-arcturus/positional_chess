@@ -517,18 +517,34 @@ fn detect_skewer(ctx: &Context, out: &mut Vec<Motif>) {
 ///     AND at least one specific target wins material via SEE.
 /// Defended forks (where every target is supported and the forker is
 /// itself hanging on a worse SEE) don't fire.
+/// Fork detector — TIGHT version.
+///
+/// User: "it uses forks ... wrongly." A fork in the chess sense is two
+/// targets where the attacker actually GAINS material. A piece attacking
+/// two defended pieces that nobody can take cleanly isn't a fork — it's
+/// just contact. The previous detector required only 1 winning target,
+/// which let too much through.
+///
+/// New criteria — fork fires iff:
+///   (a) the moving piece attacks ≥ 2 enemy pieces, AND
+///   (b) at least one target is the KING, in which case the OTHER target
+///       must be SEE-positive (the king can't be captured, so the other
+///       fork-prong must be winnable), OR
+///   (c) ≥ 2 targets are SEE-positive (we can win at least one and
+///       follow up with the other after opp's response).
 fn detect_fork(ctx: &Context, out: &mut Vec<Motif>) {
     let board = ctx.after.board();
     let attacks = attacks_from(board, ctx.to);
     let enemy = board.by_color(ctx.opp);
     let targets_bb = attacks & enemy;
     let targets: Vec<Square> = targets_bb.into_iter().collect();
-    if targets.len() < 2 {
-        return;
-    }
+    if targets.len() < 2 { return; }
     let mover_val = role_value(ctx.moved.role);
+
     let mut significant: Vec<Piece> = Vec::new();
-    let mut any_winning = false;
+    let mut winning_targets: Vec<Piece> = Vec::new();
+    let mut king_target = false;
+
     for sq in &targets {
         let p = board.piece_at(*sq).unwrap();
         let is_king = p.role == Role::King;
@@ -536,31 +552,31 @@ fn detect_fork(ctx: &Context, out: &mut Vec<Motif>) {
         if is_king || heavier {
             significant.push(p);
         }
-        // SEE-aware: would actually capturing this win material?
+        if is_king { king_target = true; }
         if let Some(see_val) = see_capture(board, *sq, ctx.mover) {
-            if see_val > 0 {
-                any_winning = true;
-            }
-        } else if is_king {
-            any_winning = true; // king is always "winning" if exposed
+            if see_val > 0 { winning_targets.push(p); }
         }
     }
-    if significant.len() >= 1 && (any_winning || significant.iter().any(|p| p.role == Role::King)) {
-        // Read-out: list up to 2 distinct roles.
-        let mut roles: Vec<&str> = Vec::new();
-        for p in &significant {
-            let n = role_name(p.role);
-            if !roles.contains(&n) {
-                roles.push(n);
-            }
-        }
-        let phrase = if roles.len() >= 2 {
-            format!("Forks {} and {}", roles[0], roles[1])
-        } else {
-            format!("Forks the {}", roles[0])
-        };
-        push(out, "fork", phrase);
+
+    // Fire condition:
+    //   - king + ≥1 SEE-positive other target, OR
+    //   - ≥ 2 SEE-positive targets independent of the king.
+    let qualifies = (king_target && !winning_targets.is_empty())
+                    || winning_targets.len() >= 2;
+    if !qualifies { return; }
+
+    let mut roles: Vec<&str> = Vec::new();
+    let pool = if king_target { &significant } else { &winning_targets };
+    for p in pool {
+        let n = role_name(p.role);
+        if !roles.contains(&n) { roles.push(n); }
     }
+    let phrase = if roles.len() >= 2 {
+        format!("Forks {} and {}", roles[0], roles[1])
+    } else {
+        format!("Forks the {}", roles[0])
+    };
+    push(out, "fork", phrase);
 }
 
 /// Battery: friendly slider partner aligned along the same ray, with a
@@ -652,14 +668,23 @@ fn detect_threats_and_creates(ctx: &Context, out: &mut Vec<Motif>) {
     // strictly heavier than us, AND the capture would actually win
     // material. Defended-but-heavier pieces don't qualify (they're
     // already a known constraint, not a fresh threat).
+    //
+    // Phrase distinction:
+    //   - SEE > 0 AND no defender → "Wins the rook"
+    //   - SEE > 0 WITH defender(s) → "Threatens the rook" (can win the
+    //     exchange, but defenders are present)
+    //   - SEE = 0 (defended) → don't fire — that's geometric proximity,
+    //     not a real threat. (User's principle: a defended piece isn't
+    //     under threat in any meaningful sense.)
     for sq in &targets {
         let p = board.piece_at(*sq).unwrap();
         if p.role == Role::King { continue; } // already check
         if role_value(p.role) <= mover_val { continue; }
-        // SEE-positive capture? (i.e. winning material here.)
         if let Some(see_val) = see_capture(board, *sq, ctx.mover) {
             if see_val > 0 {
-                push(out, "threatens", format!("Threatens the {}", role_name(p.role)));
+                let defenders = board.attacks_to(*sq, ctx.opp, board.occupied()).count();
+                let verb = if defenders == 0 { "Wins" } else { "Threatens" };
+                push(out, "threatens", format!("{} the {}", verb, role_name(p.role)));
                 return;
             }
         }
@@ -1639,10 +1664,25 @@ fn detect_attacks_pawn(ctx: &Context, out: &mut Vec<Motif>) {
         } else {
             ""
         };
+        // *** Phrase choice: "Attacks" implies winnability. ***
+        //
+        // User feedback: "attacks doesn't make sense when its defended,
+        // rather it shd be eyes the X or something." Right.
+        // Lexical mapping:
+        //   - SEE > 0  AND  no defender → "Wins the {file}-pawn"
+        //   - SEE > 0  WITH  defenders   → "Attacks the {file}-pawn"
+        //   - SEE = 0  ON a weakness     → "Pressures the {file}-pawn"
+        //   - otherwise we'd already have skipped above.
+        let verb = if see_val > 0 {
+            if defenders == 0 { "Wins" } else { "Attacks" }
+        } else {
+            // see_val == 0 with a weakness: applying pressure, not winning.
+            "Pressures"
+        };
         push(
             out,
             "attacks_pawn",
-            format!("Attacks the {}{}-pawn", adj, file_letter(f)),
+            format!("{} the {}{}-pawn", verb, adj, file_letter(f)),
         );
         return;
     }
@@ -2228,14 +2268,60 @@ fn detect_rook_lift(ctx: &Context, out: &mut Vec<Motif>) {
 ///
 /// This catches things like "knight steps off c3, opening the c-file for
 /// the rook on c1".
+/// Opens a file / diagonal for our slider — TIGHT version.
+///
+/// User: "opens diagonals for / opens files for ... wrongly." A file or
+/// diagonal that "opens" but lets the slider attack NOTHING isn't worth
+/// flagging. The geometric condition (slider behind, vacating square)
+/// is necessary but not sufficient: the slider must GAIN real reach
+/// (an enemy piece, an enemy-half square, or a king-zone square it
+/// didn't have before).
+///
+/// Two-condition check, applied uniformly to file and diagonal:
+///   (1) The vacated path is now genuinely clear for our slider.
+///   (2) The slider's NEW attack set (reachable squares) includes at
+///       least one of: an enemy piece, the enemy half, or the enemy
+///       king's zone.
 fn detect_opens_line_for(ctx: &Context, out: &mut Vec<Motif>) {
     let board_a = ctx.after.board();
     let board_b = ctx.before.board();
-    // File (vertical) line: any of OUR R/Q on the same file as `from`,
-    // with `from` between them and any further square that's now newly
-    // attacked.
     let f0 = ctx.from.file() as i32;
     let r0 = ctx.from.rank() as i32;
+    let opp_king_sq = find_king(board_a, ctx.opp);
+    let enemy_pieces = board_a.by_color(ctx.opp);
+
+    // Helper: a slider on `sq` actually GAINS something useful by the
+    // newly-cleared line. We compute its attack set from the after
+    // board (with from-square emptied) and check it intersects either
+    // an enemy piece, the enemy half (rank 4-7 for white attackers,
+    // 0-3 for black), or the enemy king zone.
+    let slider_gains_real_reach = |sq: Square, role: Role| -> bool {
+        let occ = board_a.occupied();
+        let attacks = match role {
+            Role::Rook => rook_attacks(sq, occ),
+            Role::Bishop => bishop_attacks(sq, occ),
+            Role::Queen => queen_attacks(sq, occ),
+            _ => return false,
+        };
+        // Enemy piece in attack set?
+        if (attacks & enemy_pieces).any() { return true; }
+        // King zone touch?
+        if let Some(k) = opp_king_sq {
+            if (attacks & king_zone(k)).any() { return true; }
+        }
+        // Enemy-half square count: meaningful presence (≥3 squares).
+        let mut enemy_half_count = 0;
+        for s in attacks {
+            let r = s.rank() as i32;
+            let in_enemy_half = match ctx.mover {
+                Color::White => r >= 4,
+                Color::Black => r <= 3,
+            };
+            if in_enemy_half { enemy_half_count += 1; }
+            if enemy_half_count >= 3 { return true; }
+        }
+        false
+    };
 
     // Files: scan up and down from the from-square.
     let our_rooks_queens =
@@ -2244,37 +2330,35 @@ fn detect_opens_line_for(ctx: &Context, out: &mut Vec<Motif>) {
         if sq == ctx.from || sq == ctx.to { continue; }
         let sf = sq.file() as i32;
         let sr = sq.rank() as i32;
-        // Same file, our slider sits behind `from`?
+        let role = match board_a.piece_at(sq).map(|p| p.role) { Some(r) => r, None => continue };
         if sf == f0 && sr != r0 {
             let between_clear = ray_clear_between_after(board_a, sq, ctx.from);
             let was_blocked_before = !ray_clear_between(board_b, sq, ctx.from)
                 || board_b.piece_at(ctx.from).map_or(false, |p| p.color == ctx.mover);
-            if between_clear && was_blocked_before {
-                let role = match board_a.piece_at(sq).map(|p| p.role) {
-                    Some(Role::Rook) => "rook",
-                    Some(Role::Queen) => "queen",
-                    _ => "rook",
+            if between_clear && was_blocked_before && slider_gains_real_reach(sq, role) {
+                let role_str = match role {
+                    Role::Rook => "rook", Role::Queen => "queen", _ => "rook",
                 };
-                push(out, "opens_file_for", format!("Opens the {}-file for the {}", file_letter(File::new(f0 as u32)), role));
+                push(out, "opens_file_for",
+                     format!("Opens the {}-file for the {}",
+                             file_letter(File::new(f0 as u32)), role_str));
                 return;
             }
         }
-        // Same diagonal? Distance check.
         if (sf - f0).abs() == (sr - r0).abs() && (sf - f0).abs() > 0 {
-            // Only diagonal-mover (B or Q) opens a diagonal.
-            let role = board_a.piece_at(sq).map(|p| p.role);
-            if !matches!(role, Some(Role::Bishop) | Some(Role::Queen)) { continue; }
+            if !matches!(role, Role::Bishop | Role::Queen) { continue; }
             let between_clear = ray_clear_between_after(board_a, sq, ctx.from);
             let was_blocked_before = !ray_clear_between(board_b, sq, ctx.from)
                 || board_b.piece_at(ctx.from).map_or(false, |p| p.color == ctx.mover);
-            if between_clear && was_blocked_before {
-                let role_str = match role { Some(Role::Bishop) => "bishop", _ => "queen" };
-                push(out, "opens_diagonal_for", format!("Opens a diagonal for the {}", role_str));
+            if between_clear && was_blocked_before && slider_gains_real_reach(sq, role) {
+                let role_str = if role == Role::Bishop { "bishop" } else { "queen" };
+                push(out, "opens_diagonal_for",
+                     format!("Opens a diagonal for the {}", role_str));
                 return;
             }
         }
     }
-    // Bishops too (already partially handled above for Q).
+    // Bishops (treated separately since they're not in the rooks_queens set).
     let our_bishops = board_a.bishops() & board_a.by_color(ctx.mover);
     for sq in our_bishops {
         if sq == ctx.from || sq == ctx.to { continue; }
@@ -2284,7 +2368,7 @@ fn detect_opens_line_for(ctx: &Context, out: &mut Vec<Motif>) {
             let between_clear = ray_clear_between_after(board_a, sq, ctx.from);
             let was_blocked_before = !ray_clear_between(board_b, sq, ctx.from)
                 || board_b.piece_at(ctx.from).map_or(false, |p| p.color == ctx.mover);
-            if between_clear && was_blocked_before {
+            if between_clear && was_blocked_before && slider_gains_real_reach(sq, Role::Bishop) {
                 push(out, "opens_diagonal_for", "Opens a diagonal for the bishop");
                 return;
             }
