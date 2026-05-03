@@ -666,31 +666,49 @@ function composePlanDescription(planSteps, planTheme, attackingSide, rootFen, en
     return `${sideCap} maneuvers the ${role} from ${start} to ${dest} (via ${intermediate}).`;
   }
 
+  // Pure prose. Don't dump SAN sequences into the description — the
+  // user reads English, not coordinate notation. Where we want to be
+  // more specific, we describe what's happening (an exchange on a
+  // particular square, a pawn pushed to a particular square, a piece
+  // landing on a key square) but ALWAYS in natural language.
   if (planTheme && planTheme.startsWith('kingside_attack_')) {
-    return `${sideCap} pressures the ${oppCap.toLowerCase()} king. Engine line: ${planSteps.slice(0, 4).map(s => s.san).join(' ')}.`;
+    return `${sideCap} keeps pressing the ${oppCap.toLowerCase()} king with a sequence of attacking moves.`;
   }
   if (planTheme === 'simplification') {
     if (capturedTargets.length > 0) {
-      return `${sideCap} simplifies — trades on ${capturedTargets[0].square} and heads into a clearer endgame.`;
+      return `${sideCap} simplifies — exchanges pieces on ${capturedTargets[0].square} and steers into a clearer endgame.`;
     }
-    return `${sideCap} simplifies through trades.`;
+    return `${sideCap} reduces the position by trading down.`;
   }
   if (planTheme === 'pawn_advance') {
     if (pawnPushes.length > 0) {
       const finalPush = pawnPushes[pawnPushes.length - 1];
-      return `${sideCap} pushes the pawn toward promotion — ${finalPush.san} is the spearhead.`;
+      return `${sideCap} pushes the pawn through to ${finalPush.to}, eyeing promotion.`;
     }
-    return `${sideCap} marches a passed pawn toward promotion.`;
+    return `${sideCap} advances a passed pawn toward promotion.`;
   }
   if (planTheme === 'piece_activity') {
-    return `${sideCap} improves piece activity. Engine line: ${planSteps.slice(0, 4).map(s => s.san).join(' ')}.`;
+    return `${sideCap} improves the worst piece and consolidates active squares.`;
   }
   if (planTheme === 'tactics') {
-    return `${sideCap} sees a concrete tactical sequence: ${planSteps.slice(0, 4).map(s => s.san).join(' ')}.`;
+    // Pull the most descriptive headline from the PV's motifs.
+    const tacticalStep = planSteps.find(s => (s.motifs || []).some(id =>
+      ['fork','pin','skewer','discovered_check','greek_gift','sacrifice'].includes(id)));
+    if (tacticalStep && tacticalStep.headline) {
+      return `${sideCap} has a concrete tactical sequence: ${tacticalStep.headline.toLowerCase()}.`;
+    }
+    return `${sideCap} sees a concrete tactical sequence in the next few moves.`;
   }
 
-  // Fallback — just describe the line.
-  return `Engine line: ${planSteps.slice(0, 5).map(s => s.san).join(' ')}.`;
+  // Fallback — describe the very first ply in prose.
+  if (planSteps.length > 0) {
+    const first = planSteps[0];
+    if (first.headline) {
+      return `Engine continues with ${first.san} — ${first.headline.toLowerCase()}.`;
+    }
+    return `Engine plays ${first.san} and continues for ${planSteps.length} more moves.`;
+  }
+  return null;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -749,9 +767,13 @@ function inferPlanBrief(rootFen, pv, rootMotifIds, rootSide) {
   }
   const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]);
   if (ranked.length === 0) {
+    // No theme-bucketed motifs fired. Be honest — "no specific plan
+    // beyond the immediate move" is more useful than dumping a SAN
+    // string. Only return prose; the per-move plan brief is plural
+    // by intent.
     return {
       theme: null,
-      text: planSteps.length >= 2 ? `Engine continuation: ${planSteps.slice(0, 4).map(s => s.san).join(' ')}` : null,
+      text: planSteps.length >= 2 ? `quiet continuation, no specific tactical or structural theme` : null,
       pv: planSteps.map(s => s.san),
     };
   }
