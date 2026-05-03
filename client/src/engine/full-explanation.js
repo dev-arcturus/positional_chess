@@ -19,12 +19,13 @@
 // suitable for prompting a model to write a paragraph about the
 // position.
 
-import engine from './engine';
+import engine, { getEngineDefaults } from './engine';
 import { explainPosition, analyzeMove, isReady as wasmReady } from './analyzer-rs';
 import { getSideToMove } from './chess';
 
-const PLAN_DEPTH = 14;
-const PLAN_MULTIPV = 5;
+// The plan walker needs enough breadth to compare alternative continuations
+// when classifying the move's character. Bump below this floor.
+const PLAN_MIN_MULTIPV = 5;
 const PLAN_PLIES = 6; // walk the principal variation up to this many plies
 
 // Motif IDs that count as "targeting the king" — used to score how much
@@ -47,9 +48,12 @@ export async function buildFullExplanation(fen, opts = {}) {
   if (!staticBlob || staticBlob.error) return staticBlob || null;
 
   // ── Engine layer ────────────────────────────────────────────────────
+  const defaults = getEngineDefaults();
+  const planDepth = opts.depth || defaults.depth;
+  const planMultiPV = Math.max(opts.multipv || defaults.multipv, PLAN_MIN_MULTIPV);
   let engineRes;
   try {
-    engineRes = await engine.analyzeMultiPV(fen, PLAN_MULTIPV, opts.depth || PLAN_DEPTH);
+    engineRes = await engine.analyzeMultiPV(fen, planMultiPV, planDepth);
   } catch {
     return staticBlob; // engine failed; static is still useful
   }
@@ -232,7 +236,7 @@ export async function buildFullExplanation(fen, opts = {}) {
   staticBlob.principal_plan = {
     eval_cp: engineRes.score ?? 0,
     eval_mate: engineRes.mate ?? null,
-    depth: opts.depth || PLAN_DEPTH,
+    depth: planDepth,
     moves: planSteps,
     key_squares: keySquares,
     theme: planTheme,
@@ -811,8 +815,7 @@ function inferPlanBrief(rootFen, pv, rootMotifIds, rootSide) {
 //   "Positional" — outpost / centralization / structural / quiet
 //   "Solid"      — castling / development / consolidation
 //   "Quiet"      — none of the above signals fire
-function classifyCharacter(motifIds, ourMove, idx, allTopMoves) {
-  const has = (id) => motifIds.includes(id);
+function classifyCharacter(motifIds, _ourMove, idx, allTopMoves) {
   const hasAny = (ids) => ids.some(id => motifIds.includes(id));
 
   // Sacrifice + king attack → Aggressive.

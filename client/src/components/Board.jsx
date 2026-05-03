@@ -29,7 +29,11 @@ import { findOpeningFromHistory } from '../engine/openings';
 // `<ChessPieceIcon>` so the piece glyph renders consistently as SVG.
 //
 // Returns `{ piece: ?'k'|'q'|'r'|'b'|'n', rest }` — a render-friendly tuple.
-function sanWithPieces(san, isWhiteMove) {
+// (`_isWhiteMove` was a parameter for an earlier "white pieces vs black
+//  pieces glyph" rendering; not needed since pieces are now resolved by
+//  the move number from the call site. Kept in the signature with an
+//  underscore prefix so existing call sites don't need to change.)
+function sanWithPieces(san) {
   if (!san) return { piece: null, rest: san || '' };
   if (san.startsWith('O-')) return { piece: null, rest: san };
   const head = san[0];
@@ -70,57 +74,6 @@ function colorForCp(cp, pieceType = 'q', calibration = 3) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-// (Random-position library now lives in `client/src/engine/positions.js`
-//  and includes Saavedra, Réti, Lucena, Philidor, Vancura, Kasparov–
-//  Topalov, Marshall–Capablanca, Polugaevsky–Nezhmetdinov, classic
-//  studies, and pawn-structure templates. Keep the previous inline
-//  list as a fallback in case positions.js fails to load.)
-const RANDOM_POSITIONS_FALLBACK = [
-  // — Openings (just out of theory) —
-  // Italian, Giuoco Pianissimo
-  'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 4 4',
-  // Sicilian Najdorf
-  'rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6',
-  // Queen's Gambit Declined, Orthodox
-  'rnbqk2r/ppp1bppp/4pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 0 5',
-  // French Defense, Tarrasch
-  'rnbqkb1r/pp3ppp/4pn2/2pp4/3P4/2N1PN2/PPP2PPP/R1BQKB1R w KQkq - 0 5',
-  // King's Indian Defense
-  'rnbqk2r/ppp1ppbp/3p1np1/8/2PPP3/2N2N2/PP3PPP/R1BQKB1R b KQkq - 1 5',
-  // Caro-Kann, Panov-Botvinnik
-  'rnbqkbnr/pp2pppp/2p5/3p4/2PPP3/8/PP3PPP/RNBQKBNR b KQkq - 0 3',
-  // Sveshnikov Sicilian
-  'r1bqkb1r/5ppp/p1np1n2/1p2p3/4P3/N1N5/PPP2PPP/R1BQKB1R w KQkq - 0 8',
-  // London System
-  'rnbqkb1r/ppp1pppp/5n2/3p4/3P1B2/5N2/PPP1PPPP/RN1QKB1R b KQkq - 2 3',
-  // English Opening
-  'rnbqkb1r/pppp1ppp/4pn2/8/2P5/2N2N2/PP1PPPPP/R1BQKB1R b KQkq - 3 3',
-  // King's Gambit Accepted
-  'rnbqkbnr/pppp1ppp/8/8/4Pp2/8/PPPP2PP/RNBQKBNR w KQkq - 0 3',
-  // — Sharp middlegames —
-  // Italian-style attack with c3-d4 push
-  'r1bqk2r/pp1pbppp/2n2n2/2p5/3PP3/2P2N2/PP3PPP/RNBQKB1R w KQkq - 1 7',
-  // King's Indian middlegame, both sides castled
-  'r1bq1rk1/ppp1npbp/2np2p1/4p3/2PPP3/2N1BN2/PP1QBPPP/R3K2R w KQ - 1 8',
-  // Sicilian Dragon middlegame
-  'r1bq1rk1/pp2ppbp/2np1np1/8/3NP3/2N1B3/PPPQBPPP/R3K2R w KQ - 4 9',
-  // Tactical position with queens still on
-  'r2qkb1r/1p1n1ppp/p2p1n2/4p3/4P3/1NN5/PPP1BPPP/R1BQ1RK1 w kq - 0 9',
-  // Late middlegame, queens off, active rooks
-  '2r3k1/p4p1p/1p1q2p1/3p4/3P4/1B3Q2/P4PPP/2R3K1 w - - 0 24',
-  // — Endgames —
-  // Rook + pawn endgame (Lucena-ish setup)
-  '4k3/p4p2/1p2p3/2p5/8/2P5/PP3PP1/3R2K1 w - - 0 1',
-  // Knight vs bishop endgame
-  '8/4kpp1/8/3n4/2B5/8/4KPP1/8 w - - 0 1',
-  // King + pawn endgame, opposition
-  '8/8/8/3k4/3P4/3K4/8/8 w - - 0 1',
-  // Minor-piece middlegame, balanced
-  'r1b2rk1/ppp2ppp/2n2n2/3pp3/8/2NPPN2/PPP2PPP/R1B2RK1 w - - 0 9',
-  // Queen + rook endgame
-  '6k1/5ppp/8/8/8/2Q5/5PPP/4R1K1 w - - 0 1',
-];
-
 // Tone palette for move-character pills shown under each top move.
 // Restrained — different hues for different move types but all on the
 // same low-saturation level so the row doesn't become a christmas tree.
@@ -154,16 +107,11 @@ function characterBorder(label) {
   }
 }
 
-// Fallback retained for safety; preferred path goes through the imported
-// `pickRandomPosition` from positions.js.
-function pickRandomPositionFallback() {
-  return RANDOM_POSITIONS_FALLBACK[Math.floor(Math.random() * RANDOM_POSITIONS_FALLBACK.length)];
-}
-
 export default function Board() {
   // Position state
   const [fen, setFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
   const [inputFen, setInputFen] = useState(fen);
+  const [fenError, setFenError] = useState(null);
   const [orientation, setOrientation] = useState('white');
 
   // Move history for back/forward
@@ -174,7 +122,7 @@ export default function Board() {
   const [evalCp, setEvalCp] = useState(null);
   const [evalMate, setEvalMate] = useState(null);
   const [gameResult, setGameResult] = useState(null);  // '1-0' / '0-1' / '½-½' / null
-  const [loading, setLoading] = useState(false);
+  const [gameOver, setGameOver] = useState(null);      // 'checkmate' / 'stalemate' / 'draw' / null
   const [topMoves, setTopMoves] = useState([]);
   const [topMovesLoading, setTopMovesLoading] = useState(false);
 
@@ -277,6 +225,7 @@ export default function Board() {
       setEvalCp(result.eval_cp);
       setEvalMate(result.mate ?? null);
       setGameResult(result.result ?? null);
+      setGameOver(result.gameOver ?? null);
     } catch (error) {
       console.error("Top moves failed", error);
     } finally {
@@ -587,9 +536,15 @@ export default function Board() {
       setMoveHistory([{ fen: inputFen, san: null }]);
       setHistoryIndex(0);
       setFen(inputFen);
-    } catch {
-      alert("Invalid FEN");
+      setFenError(null);
+    } catch (err) {
+      setFenError(err?.message || 'Invalid FEN');
     }
+  };
+
+  const handleFenInputChange = (e) => {
+    setInputFen(e.target.value);
+    if (fenError) setFenError(null);
   };
 
   // Arrow for the currently-selected top-moves entry.
@@ -603,9 +558,6 @@ export default function Board() {
 
   // Are we currently rendering the live "if you dropped here" preview?
   const showPreview = isDragging && !!dragHover && !!previewHeatmap;
-
-  // The heatmap that drives backgrounds and (in preview mode) labels.
-  const tintHeatmap = showPreview ? previewHeatmap : heatmapPieces;
 
   // Set of legal-destination squares for the currently-selected piece.
   // Used to swap piece-worth labels for destination-change labels there.
@@ -789,8 +741,11 @@ export default function Board() {
     return styles;
   }, [selectedSquare, fen, showPreview, dragHover, hangingSet, topMoveDest]);
 
-  // Square-to-pixel mapping helper, accounting for board flip.
-  function squarePxPosition(square) {
+  // Square-to-pixel mapping helper, accounting for board flip. Wrapped
+  // in `useCallback` so the `useMemo`s below get a stable identity (the
+  // exhaustive-deps lint rule otherwise complains, even though
+  // `orientation` is the only dependency and is already in their deps).
+  const squarePxPosition = useCallback((square) => {
     const BOARD_PX = 600;
     const SQ = BOARD_PX / 8;
     const file = square.charCodeAt(0) - 'a'.charCodeAt(0);
@@ -802,7 +757,7 @@ export default function Board() {
       row = 7 - row;
     }
     return { left: col * SQ, top: row * SQ, size: SQ };
-  }
+  }, [orientation]);
 
   // Format a pawn-delta as a signed label. "+1.3" / "-0.5" / "0.0".
   function fmtDelta(pawns) {
@@ -1003,7 +958,8 @@ export default function Board() {
       }));
   }, [
     heatmapVisible, heatmapPieces, previewHeatmap,
-    showPreview, dragHover, selectedSquare, orientation, legalDestSet,
+    showPreview, dragHover, selectedSquare, legalDestSet,
+    squarePxPosition,
   ]);
 
   // Labels on legal-move targets — the change in the moved piece's value if
@@ -1024,7 +980,8 @@ export default function Board() {
     });
   }, [
     heatmapVisible, selectedSquare, destValues,
-    heatmapPieces, showPreview, orientation, selectedPieceType,
+    heatmapPieces, showPreview, selectedPieceType,
+    squarePxPosition,
   ]);
 
   // Quality → color, symbol, label. Lichess-style annotation symbols
@@ -1066,7 +1023,6 @@ export default function Board() {
     missed_mate: 'Missed mate',
   };
   const getQualityColor = (q) => QUALITY_COLOR[q] || '#a1a1aa';
-  const getQualitySymbol = (q) => QUALITY_SYMBOL[q] ?? '';
   const getQualityLabel = (q) => QUALITY_LABEL[q] || '';
 
   return (
@@ -1374,7 +1330,7 @@ export default function Board() {
                     const isWhiteMove = i % 2 === 0;
                     const moveNum = Math.floor(i / 2) + 1;
                     const active = historyIndex === i + 1;
-                    const { piece, rest } = sanWithPieces(m.san, isWhiteMove);
+                    const { piece, rest } = sanWithPieces(m.san);
                     return (
                       <span
                         key={i}
@@ -1566,9 +1522,70 @@ export default function Board() {
               eval breakdown, themes, plan, narrative. */}
           <AboutPosition explanation={posExplanation} />
 
+          {/* Game-end banner — shown when the position is terminal.
+              `gameOver` is the reason ('checkmate' / 'stalemate' / 'draw'),
+              `gameResult` is the result string ('1-0' / '0-1' / '½-½'). */}
+          {gameOver && (
+            <div
+              role="status"
+              style={{
+                padding: '10px 14px',
+                borderTop: '1px solid #27272a',
+                borderBottom: '1px solid #27272a',
+                backgroundColor: gameOver === 'checkmate'
+                  ? 'rgba(74, 222, 128, 0.06)'
+                  : 'rgba(161, 161, 170, 0.06)',
+              }}
+            >
+              <div style={{
+                fontSize: '9px',
+                color: '#71717a',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                fontWeight: 700,
+                marginBottom: '4px',
+              }}>
+                Game over
+              </div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: '8px',
+                flexWrap: 'wrap',
+              }}>
+                <span style={{
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  color: gameOver === 'checkmate' ? '#86efac' : '#d4d4d8',
+                  textTransform: 'capitalize',
+                }}>
+                  {gameOver === 'checkmate'
+                    ? `Checkmate — ${gameResult === '1-0' ? 'White' : 'Black'} wins`
+                    : gameOver === 'stalemate'
+                    ? 'Stalemate — draw'
+                    : 'Draw'}
+                </span>
+                {gameResult && (
+                  <span style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: '#a1a1aa',
+                  }}>
+                    {gameResult}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Top moves list (scrollable, full details) */}
           <div className="thin-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-            {topMovesLoading ? (
+            {gameOver ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#71717a', fontSize: '12px' }}>
+                No moves to analyze.
+              </div>
+            ) : topMovesLoading ? (
               <div style={{ textAlign: 'center', padding: '20px', color: '#71717a', fontSize: '12px' }}>
                 Analyzing…
               </div>
@@ -1786,16 +1803,18 @@ export default function Board() {
         backgroundColor: 'rgba(24, 24, 27, 0.5)',
         padding: '12px',
         borderRadius: '3px',
-        border: '1px solid #27272a'
+        border: '1px solid ' + (fenError ? 'rgba(248, 113, 113, 0.45)' : '#27272a')
       }}>
         <form onSubmit={handleFenSubmit} style={{ display: 'flex', gap: '8px' }}>
           <input
             value={inputFen}
-            onChange={(e) => setInputFen(e.target.value)}
+            onChange={handleFenInputChange}
+            aria-invalid={fenError ? 'true' : 'false'}
+            aria-describedby={fenError ? 'fen-error' : undefined}
             style={{
               flex: 1,
               backgroundColor: '#09090b',
-              border: '1px solid #27272a',
+              border: '1px solid ' + (fenError ? 'rgba(248, 113, 113, 0.55)' : '#27272a'),
               borderRadius: '2px',
               padding: '8px 12px',
               fontSize: '12px',
@@ -1818,6 +1837,21 @@ export default function Board() {
             Load
           </button>
         </form>
+        {fenError && (
+          <div
+            id="fen-error"
+            role="alert"
+            style={{
+              marginTop: '8px',
+              fontSize: '11px',
+              color: '#fca5a5',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              lineHeight: 1.4,
+            }}
+          >
+            Invalid FEN: {fenError}
+          </div>
+        )}
       </div>
     </div>
   );
