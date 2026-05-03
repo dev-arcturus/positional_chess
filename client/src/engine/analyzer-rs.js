@@ -102,6 +102,15 @@ export function composeTagline(rustResult) {
   // These are the headline events — when one fires, supporting motifs
   // become redundant. (E.g., `greek_gift` already implies sacrifice +
   // check + king attack — saying any of them again is noise.)
+  // Delivered named-mates take precedence over the bare `checkmate`
+  // phrase. Order matters — most specific first.
+  if (has('smothered_mate'))       return out(rustResult, motifIds, 'Smothered mate!');
+  if (has('boden_mate'))           return out(rustResult, motifIds, "Boden's mate — bishops on crossing diagonals");
+  if (has('anastasia_mate'))       return out(rustResult, motifIds, "Anastasia's mate");
+  if (has('arabian_mate'))         return out(rustResult, motifIds, 'Arabian mate — rook + knight on the cornered king');
+  if (has('lolli_mate'))           return out(rustResult, motifIds, "Lolli's mate");
+  if (has('back_rank_mate'))       return out(rustResult, motifIds, 'Back-rank mate');
+  if (has('epaulette_mate'))       return out(rustResult, motifIds, 'Epaulette mate');
   if (has('checkmate'))            return out(rustResult, motifIds, 'Delivers checkmate');
   if (has('greek_gift')) {
     return out(rustResult, motifIds,

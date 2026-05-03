@@ -78,7 +78,7 @@ export async function buildFullExplanation(fen, opts = {}) {
     const result = analyzeMove(fen, m.move);
     const motifIds = (result?.motifs || []).map(x => x.id);
     const planBrief = inferPlanBrief(fen, m.pv || [], motifIds, attackingSideOf(fen));
-    const character = classifyCharacter(motifIds, m, idx, engineRes.moves);
+    const quality = topMoveQuality(idx, m, engineRes.moves);
     return {
       uci: m.move,
       san: result?.san || m.move,
@@ -91,8 +91,11 @@ export async function buildFullExplanation(fen, opts = {}) {
       plan_theme: planBrief.theme,
       plan_brief: planBrief.text,
       plan_pv: planBrief.pv,
-      character: character.label,
-      character_reason: character.reason,
+      // Lichess-style quality classification for the top-moves panel.
+      // Top-N candidates are by definition close to the engine's best;
+      // the bands here are calibrated for that range only — we never
+      // emit "blunder" / "mistake" inside the engine's recommended set.
+      quality,
     };
   });
 
@@ -797,66 +800,34 @@ function inferPlanBrief(rootFen, pv, rootMotifIds, rootSide) {
   };
 }
 
-// Classify a move by its tone — the kind of game it sets up. Combines
-// motifs (what the move IS) with engine signals (how forced /
-// committal it is) to label every top-engine move with one of:
+// Lichess-style quality classifier for the top-moves panel.
 //
-//   "Forcing"    — opp's best reply is significantly worse than their
-//                   second-best (only one good answer)
-//   "Aggressive" — clear king-attack / sacrifice motifs
-//   "Combative"  — creates threats / forks / pins; sharp but not
-//                   king-attack
-//   "Risky"      — sacrifice without confirmed compensation
-//   "Drawish"    — heads into simplification when already equal
-//   "Positional" — outpost / centralization / structural / quiet
-//   "Solid"      — castling / development / consolidation
-//   "Quiet"      — none of the above signals fire
-function classifyCharacter(motifIds, ourMove, idx, allTopMoves) {
-  const has = (id) => motifIds.includes(id);
-  const hasAny = (ids) => ids.some(id => motifIds.includes(id));
-
-  // Sacrifice + king attack → Aggressive.
-  if (hasAny(['greek_gift','sacrifice','decisive_combination','smothered_hint','double_check','back_rank_mate_threat','anastasia_mate_threat','bodens_mate_threat','arabian_mate_threat'])) {
-    return { label: 'Aggressive', reason: 'Sacrifice / direct king attack' };
+// `idx` is the move's rank (0 = engine's first choice). `m` is the engine
+// record with `score` (mover-POV cp) and `mate`. Within the engine's top-N
+// recommendations, all moves are by definition close to the best — we only
+// emit "best" / "excellent" / "good", never inaccuracy/mistake/blunder.
+// Played-move quality (with the full ladder including missed_mate) lives
+// in client/src/engine/explainer.js::classifyMove.
+function topMoveQuality(idx, m, allTopMoves) {
+  if (idx === 0) return 'best';
+  const top = allTopMoves[0];
+  if (!top) return 'good';
+  // If best is mate and this move is a mate too, it's still "best" or
+  // "excellent" depending on faster vs slower mate.
+  if (top.mate != null && m.mate != null) {
+    if (m.mate === top.mate) return 'best';
+    return 'excellent';
   }
-
-  // Strong threat-creating motifs → Combative.
-  if (hasAny(['fork','pin','skewer','discovered_check','traps_piece','removes_defender'])) {
-    return { label: 'Combative', reason: 'Creates a sharp threat the opponent must address' };
-  }
-
-  // Forcing — opp's #1 reply is significantly worse than their #2.
-  // Only meaningful for the TOP engine move (idx 0). For other top
-  // moves we rely on motifs alone.
-  if (idx === 0 && Array.isArray(allTopMoves) && allTopMoves.length >= 2) {
-    const a = allTopMoves[0]?.score ?? 0;
-    const b = allTopMoves[1]?.score ?? 0;
-    // Forcing if best is dramatically better than 2nd-best (≥ 200 cp gap).
-    if (Math.abs(a - b) >= 200) {
-      return { label: 'Forcing', reason: 'Best move dominates alternatives by 2 pawns or more' };
-    }
-  }
-
-  // Simplification + already equal → Drawish.
-  if (hasAny(['simplifies','queen_trade','piece_trade','trades_into_endgame'])) {
-    return { label: 'Drawish', reason: 'Simplifies into an equal-or-clearer position' };
-  }
-
-  // Positional structural play.
-  if (hasAny(['outpost','knight_invasion','rook_lift','rook_seventh','open_file','semi_open_file','opens_file_for','opens_diagonal_for','long_diagonal','centralizes','activates','passed_pawn','pawn_breakthrough','battery','fianchetto'])) {
-    return { label: 'Positional', reason: 'Improves piece position / structural play' };
-  }
-
-  // Solid — castling, development, consolidation.
-  if (hasAny(['castles_kingside','castles_queenside','prepares_castling_kingside','prepares_castling_queenside','connects_rooks','luft','prophylaxis','defends','develops'])) {
-    return { label: 'Solid', reason: 'King safety / consolidation / development' };
-  }
-
-  // Risky — speculative sacrifice / hangs pieces (rare but possible).
-  if (hasAny(['hangs','exchange_sacrifice'])) {
-    return { label: 'Risky', reason: 'Speculative — gives material' };
-  }
-
-  return { label: 'Quiet', reason: 'No specific tactical or structural feature' };
+  // If best is mate but this move isn't, every cp move is much worse
+  // — but we're only comparing within the engine's top-N, so call it
+  // "good" rather than something alarmist.
+  if (top.mate != null) return 'good';
+  // Numeric eval comparison. Both scores are in the same POV from the
+  // engine, so a positive `loss` means this move is worse for the mover.
+  const loss = (top.score ?? 0) - (m.score ?? 0);
+  if (loss <= 5)  return 'best';      // tied with best within 5cp
+  if (loss <= 25) return 'excellent';
+  if (loss <= 60) return 'good';
+  return 'good'; // engine's top-N rarely goes worse than this
 }
 

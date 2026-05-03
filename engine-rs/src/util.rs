@@ -105,14 +105,23 @@ pub fn parse_uci(pos: &Chess, uci: &str) -> Result<Move, String> {
         None
     };
 
-    // Find the matching legal move.
+    // Find the matching legal move.  Castling needs special handling: in
+    // shakmaty's `Move::Castle`, `m.to()` is the *rook* square (chess-960
+    // convention), so for standard "e1g1" / "e1c1" UCI we compute the
+    // king's destination square ourselves and match against that.
     for m in pos.legal_moves() {
         if m.from() == Some(from) && m.to() == to && m.promotion() == promotion {
             return Ok(m);
         }
-        // Castling moves come back with king-from + king-target square.
         if let Move::Castle { king, rook } = &m {
-            if *king == from && (m.to() == to || *rook == to) {
+            if *king != from { continue; }
+            let king_dest_file = if rook.file() > king.file() {
+                File::G  // kingside
+            } else {
+                File::C  // queenside
+            };
+            let king_dest = Square::from_coords(king_dest_file, king.rank());
+            if king_dest == to || *rook == to {
                 return Ok(m);
             }
         }

@@ -32,7 +32,23 @@ pub fn see(
     side: Color,
     captured_role: Option<Role>,
 ) -> i32 {
-    let mut occ = board.occupied();
+    see_with_occ(board, board.occupied(), to, attacker_sq, attacker_role, side, captured_role)
+}
+
+/// SEE with a caller-supplied starting occupancy.  Lets the overloaded
+/// detector compute "what would SEE on this square be if defender D were
+/// not on the board?" by passing `board.occupied() ^ D`.  Pinned-defender
+/// awareness can be layered on later by also removing pinned pieces.
+pub fn see_with_occ(
+    board: &Board,
+    start_occ: Bitboard,
+    to: Square,
+    attacker_sq: Square,
+    attacker_role: Role,
+    side: Color,
+    captured_role: Option<Role>,
+) -> i32 {
+    let mut occ = start_occ;
     let mut gain: [i32; 32] = [0; 32];
     let mut depth = 0;
 
@@ -132,45 +148,58 @@ pub fn hanging_loss(board: &Board, sq: Square) -> Option<i32> {
 
 /// Least-valuable attacker of `to` belonging to `side`, given current
 /// occupancy `occ`. Includes x-ray sliders revealed by holes in `occ`.
+///
+/// Pinned-defender aware: a piece pinned to its own king cannot legally
+/// move off the pin line, so for SEE purposes it contributes no defence
+/// EXCEPT when the capture target is itself on the pin line (in which
+/// case the piece can capture the pinning slider). The conservative
+/// approximation here excludes pinned pieces entirely from LVA selection
+/// — this means we slightly under-count their attack agency when the
+/// rare "capture along the pin" case applies, but eliminates the much
+/// larger error of treating a pinned defender as if it could recapture.
 pub fn least_valuable_attacker(
     board: &Board,
     occ: Bitboard,
     to: Square,
     side: Color,
 ) -> Option<(Square, Role)> {
-    // Pawn attackers — pawns attacking `to` are pawns standing on the
-    // squares from which they would capture toward `to`.
+    let pinned = pinned_to_king(board, side);
     let pawns = board.by_piece(Piece { color: side, role: Role::Pawn })
         & shakmaty::attacks::pawn_attacks(side.other(), to)
-        & occ;
+        & occ
+        & !pinned;
     if let Some(sq) = pawns.first() {
         return Some((sq, Role::Pawn));
     }
 
     let knights = board.by_piece(Piece { color: side, role: Role::Knight })
         & shakmaty::attacks::knight_attacks(to)
-        & occ;
+        & occ
+        & !pinned;
     if let Some(sq) = knights.first() {
         return Some((sq, Role::Knight));
     }
 
     let bishops = board.by_piece(Piece { color: side, role: Role::Bishop })
         & bishop_attacks(to, occ)
-        & occ;
+        & occ
+        & !pinned;
     if let Some(sq) = bishops.first() {
         return Some((sq, Role::Bishop));
     }
 
     let rooks = board.by_piece(Piece { color: side, role: Role::Rook })
         & rook_attacks(to, occ)
-        & occ;
+        & occ
+        & !pinned;
     if let Some(sq) = rooks.first() {
         return Some((sq, Role::Rook));
     }
 
     let queens = board.by_piece(Piece { color: side, role: Role::Queen })
         & queen_attacks(to, occ)
-        & occ;
+        & occ
+        & !pinned;
     if let Some(sq) = queens.first() {
         return Some((sq, Role::Queen));
     }
@@ -183,4 +212,56 @@ pub fn least_valuable_attacker(
     }
 
     None
+}
+
+/// Bitboard of `color`'s pieces absolutely pinned to their own king.
+/// "Absolutely" means moving the piece would expose the king to check.
+///
+/// Algorithm: for each enemy slider whose ray passes through our king,
+/// check the squares between the slider and the king.  If exactly one of
+/// our pieces sits on that segment with no other piece in between, that
+/// piece is pinned.
+fn pinned_to_king(board: &Board, color: Color) -> Bitboard {
+    use shakmaty::attacks::between;
+    let king = match board.king_of(color) {
+        Some(k) => k,
+        None => return Bitboard::EMPTY,
+    };
+    let occ = board.occupied();
+    let our = board.by_color(color);
+    let enemy = board.by_color(color.other());
+    let mut pinned = Bitboard::EMPTY;
+
+    let orth_pinners = (board.rooks() | board.queens()) & enemy;
+    let diag_pinners = (board.bishops() | board.queens()) & enemy;
+
+    for sq in orth_pinners {
+        if sq.rank() != king.rank() && sq.file() != king.file() {
+            continue;
+        }
+        let segment = between(sq, king) & occ;
+        if segment.count() == 1 {
+            let blocker = segment.first().unwrap();
+            if our.contains(blocker) {
+                pinned |= Bitboard::from_square(blocker);
+            }
+        }
+    }
+
+    for sq in diag_pinners {
+        let df = (sq.file() as i32 - king.file() as i32).abs();
+        let dr = (sq.rank() as i32 - king.rank() as i32).abs();
+        if df != dr || df == 0 {
+            continue;
+        }
+        let segment = between(sq, king) & occ;
+        if segment.count() == 1 {
+            let blocker = segment.first().unwrap();
+            if our.contains(blocker) {
+                pinned |= Bitboard::from_square(blocker);
+            }
+        }
+    }
+
+    pinned
 }

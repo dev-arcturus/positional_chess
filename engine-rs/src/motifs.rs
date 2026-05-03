@@ -17,7 +17,7 @@
 //! this file. Lower = more important. The composer picks the top 1–2.
 
 use crate::eval::evaluate;
-use crate::see::{hanging_loss, least_valuable_attacker, see, see_capture};
+use crate::see::{hanging_loss, least_valuable_attacker, see, see_capture, see_with_occ};
 use crate::util::{
     file_letter, in_enemy_half, king_zone, role_name, role_pin_value, role_value, square_is_light,
 };
@@ -127,8 +127,17 @@ pub fn detect_all(
 
     let mut out: Vec<Motif> = Vec::with_capacity(8);
 
-    // Terminal (non-checkmate) handled separately.
+    // Terminal handling. On checkmate we emit a base `checkmate` motif AND
+    // run named-mate classifiers that may add a specific pattern label
+    // (smothered_mate / anastasia_mate / boden_mate / arabian_mate /
+    // back_rank_mate). On stalemate / insufficient material, we just
+    // record the terminal status and skip most other detectors below by
+    // virtue of nothing else being meaningful.
     match terminal {
+        Some("checkmate") => {
+            push(&mut out, "checkmate", "Delivers checkmate");
+            classify_checkmate_pattern(&ctx, &mut out);
+        }
         Some("stalemate") => push(&mut out, "stalemate", "Stalemates the position"),
         Some("insufficient_material") => push(&mut out, "insufficient_material", "Reaches insufficient material"),
         _ => {}
@@ -853,59 +862,60 @@ fn detect_overloaded(ctx: &Context, out: &mut Vec<Motif>) {
     let occ = board.occupied();
     let enemy_pieces = board.by_color(ctx.opp);
 
-    // Helper: SEE on `target` if `defender` were removed from the board.
-    // Approximation: rebuild the SEE chain skipping `defender`.
-    let see_with_defender_removed = |target: Square, defender: Square| -> Option<i32> {
-        // Rough trick: compute `see_capture` on `target` using a
-        // synthetic occupancy missing `defender`. shakmaty doesn't let
-        // us pass a fake occupancy directly through `see_capture`, so
-        // we approximate by checking the LVA difference.
-        let lva_full = least_valuable_attacker(board, occ, target, ctx.mover)?;
-        let occ_minus = occ ^ Bitboard::from_square(defender);
-        let lva_partial = least_valuable_attacker(board, occ_minus, target, ctx.mover);
-        let see_full = see_capture(board, target, ctx.mover)?;
-        // If the LVA is unchanged, removing `defender` doesn't affect
-        // OUR side; the difference comes from removing one of THEIR
-        // attackers (defenders count as attackers from opp's POV).
-        let _ = lva_full;
-        let _ = lva_partial;
-        // For a quick approximation, score how much we'd gain if their
-        // first defender is gone: roughly the value of the captured
-        // piece (target) minus our LVA value.
-        Some(see_full + role_value(board.piece_at(defender)?.role))
+    // Real overloading: an enemy piece D defends ≥ 2 enemy pieces such that
+    //   - SEE on each defended piece WITH D in place: ≤ 0 (we can't win it)
+    //   - SEE on each defended piece WITHOUT D:        > 0 (we'd win it)
+    // Removing D is modelled by passing a starting occupancy with D's
+    // square clear; the SEE chain then can't pick D up as a recapturer.
+    //
+    // We *also* require that our move actually creates this overload: the
+    // count BEFORE the move was < 2.  Otherwise we'd flag every random
+    // developing move that happens to walk into a pre-existing overload.
+    let count_overload_for = |b: &Board, defender_sq: Square| -> u32 {
+        let dp = match b.piece_at(defender_sq) { Some(p) => p, None => return 0 };
+        if dp.color != ctx.opp || dp.role == Role::King { return 0; }
+        let dp_attacks = attacks_from(b, defender_sq);
+        let occ_full = b.occupied();
+        let occ_minus = occ_full ^ Bitboard::from_square(defender_sq);
+        let mut hits = 0u32;
+        for esq in b.by_color(ctx.opp) {
+            if esq == defender_sq { continue; }
+            let ep = match b.piece_at(esq) { Some(p) => p, None => continue };
+            if ep.role == Role::King { continue; }
+            if !dp_attacks.contains(esq) { continue; }
+            // SEE with D in place.
+            let see_with = match see_capture(b, esq, ctx.mover) { Some(v) => v, None => continue };
+            if see_with > 0 { continue; } // already winning; D doesn't matter
+            // SEE without D: pick our LVA on `esq` and run the swap-off
+            // with `occ_minus` so the chain skips D entirely.
+            let (asq, arole) = match least_valuable_attacker(b, occ_minus, esq, ctx.mover) {
+                Some(p) => p,
+                None => continue,
+            };
+            let see_without = see_with_occ(
+                b,
+                occ_minus,
+                esq,
+                asq,
+                arole,
+                ctx.mover,
+                Some(ep.role),
+            );
+            if see_without > 0 { hits += 1; }
+        }
+        hits
     };
 
     for dsq in enemy_pieces {
-        let dp = board.piece_at(dsq).unwrap();
+        let dp = match board.piece_at(dsq) { Some(p) => p, None => continue };
         if dp.role == Role::King { continue; }
-
-        // Candidate targets: enemy pieces whose attack-set is touched
-        // by the defender's attack-set (i.e., the defender is one of
-        // the recapturers). We're looking for our pieces? No — opp
-        // pieces that dp defends. So enumerate opp pieces (excluding
-        // dp itself) and check if `dp.attacks` contains them.
-        let dp_attacks = attacks_from(board, dsq);
-        let mut critically_defended = 0u32;
-        for esq in enemy_pieces {
-            if esq == dsq { continue; }
-            let ep = board.piece_at(esq).unwrap();
-            if ep.role == Role::King { continue; }
-            if !dp_attacks.contains(esq) { continue; }
-            // dp defends ep. Check the SEE-with-vs-without test.
-            let see_with = match see_capture(board, esq, ctx.mover) { Some(v) => v, None => continue };
-            if see_with > 0 { continue; } // already winning for us; defender doesn't matter
-            let see_without = see_with_defender_removed(esq, dsq);
-            if let Some(v) = see_without {
-                if v > 0 {
-                    critically_defended += 1;
-                    if critically_defended >= 2 {
-                        push(out, "overloaded",
-                            format!("Overloads the {}", role_name(dp.role)));
-                        return;
-                    }
-                }
-            }
-        }
+        let after_overload = count_overload_for(board, dsq);
+        if after_overload < 2 { continue; }
+        let before_overload = count_overload_for(ctx.before.board(), dsq);
+        if before_overload >= 2 { continue; }
+        push(out, "overloaded",
+            format!("Overloads the {}", role_name(dp.role)));
+        return;
     }
 }
 
@@ -947,9 +957,17 @@ fn detect_sacrifice_or_hangs(ctx: &Context, out: &mut Vec<Motif>) {
     // "hangs the pawn", not a sacrifice in the literary sense.
     if material_lost < 200 || ctx.moved.role == Role::Pawn {
         if ctx.moved.role != Role::Pawn {
-            // Non-pawn piece on a losing square with insufficient material
-            // imbalance to call it a sacrifice → it's a blunder.
-            push(out, "hangs", format!("Hangs the {}", role_name(ctx.moved.role)));
+            // Move WAS a capture but the recovered piece doesn't fully
+            // cover the cost (e.g. Q captures a defended R: Q lost,
+            // R recovered, ~400cp net loss). Phrase that as "loses
+            // material in exchange" rather than "Hangs the queen" — the
+            // queen wasn't dropped for nothing.
+            let phrase = if recovered > 0 && ctx.moved.role != Role::Pawn {
+                format!("Loses material in the exchange")
+            } else {
+                format!("Hangs the {}", role_name(ctx.moved.role))
+            };
+            push(out, "hangs", phrase);
         }
         return;
     }
@@ -1001,7 +1019,15 @@ fn detect_sacrifice_or_hangs(ctx: &Context, out: &mut Vec<Motif>) {
     if compensation >= needed {
         push(out, "sacrifice", format!("Sacrifices the {}", role_name(ctx.moved.role)));
     } else {
-        push(out, "hangs", format!("Hangs the {}", role_name(ctx.moved.role)));
+        // Phrase by whether the move was an exchange (recovered something)
+        // or a clean piece-drop. Calling Qxa1-into-Qxa1 a "Hangs the queen"
+        // is misleading — the queen took a rook on the way down.
+        let phrase = if recovered > 0 {
+            format!("Loses material in the exchange")
+        } else {
+            format!("Hangs the {}", role_name(ctx.moved.role))
+        };
+        push(out, "hangs", phrase);
     }
 }
 
@@ -1161,9 +1187,168 @@ fn is_aimed_at_king(board: &Board, from: Square, king: Square, role: Role) -> bo
     false
 }
 
+/// Identify which named mate pattern was just delivered, if any. Called
+/// only when `terminal == Some("checkmate")`. Adds a single named-mate
+/// motif (smothered_mate / anastasia_mate / boden_mate / arabian_mate /
+/// back_rank_mate / lolli_mate / epaulette_mate / damiano_mate) on top
+/// of the base `checkmate` motif so the tagline reads
+/// "Delivers a smothered mate" instead of just "Delivers checkmate".
+///
+/// First match wins — we test in roughly priority order: smothered (most
+/// recognisable), back-rank (most common), then the named patterns. If
+/// nothing matches, no extra motif is added; the bare checkmate stands.
+fn classify_checkmate_pattern(ctx: &Context, out: &mut Vec<Motif>) {
+    let board = ctx.after.board();
+    let opp_king = match find_king(board, ctx.opp) { Some(k) => k, None => return };
+    let occ = board.occupied();
+    let kf = opp_king.file() as i32;
+    let kr = opp_king.rank() as i32;
+
+    // Smothered: king completely surrounded by its OWN pieces, and the
+    // checking piece is a knight.
+    if ctx.moved.role == Role::Knight {
+        let zone = king_attacks(opp_king);
+        let enemy = board.by_color(ctx.opp);
+        let empty_in_zone = zone & !occ;
+        // All zone squares are either off-board (handled by king_attacks) or
+        // occupied by enemy pieces — nothing free for the king to go to.
+        if empty_in_zone.count() == 0 && (zone & enemy).count() == zone.count() {
+            push(out, "smothered_mate", "Delivers a smothered mate");
+            return;
+        }
+    }
+
+    // Back-rank: king on its back rank, no pawn-shield gap to escape into.
+    let back_rank = match ctx.opp {
+        Color::White => Rank::First,
+        Color::Black => Rank::Eighth,
+    };
+    if opp_king.rank() == back_rank
+        && matches!(ctx.moved.role, Role::Rook | Role::Queen)
+    {
+        let escape_rank = match ctx.opp {
+            Color::White => Rank::Second,
+            Color::Black => Rank::Seventh,
+        };
+        let mut all_blocked = true;
+        for df in [-1, 0, 1] {
+            let f = kf + df;
+            if !(0..8).contains(&f) { continue; }
+            let s = Square::from_coords(File::new(f as u32), escape_rank);
+            // Square is "blocked" if occupied by the king's own pawn (the shield).
+            if !matches!(board.piece_at(s), Some(p) if p.color == ctx.opp && p.role == Role::Pawn) {
+                all_blocked = false;
+                break;
+            }
+        }
+        if all_blocked {
+            push(out, "back_rank_mate", "Delivers back-rank mate");
+            return;
+        }
+    }
+
+    // Boden: mate by two bishops on intersecting diagonals when king is
+    // on b/c/f/g of its back rank (typical post-castle).
+    if ctx.moved.role == Role::Bishop {
+        let our_bishops = board.by_piece(Piece { color: ctx.mover, role: Role::Bishop });
+        if our_bishops.count() >= 2 {
+            let mut both_colours = (false, false);
+            for sq in our_bishops {
+                if bishop_attacks(sq, occ).contains(opp_king) {
+                    let light = (sq.file() as u8 + sq.rank() as u8) % 2 == 1;
+                    if light { both_colours.0 = true; } else { both_colours.1 = true; }
+                }
+            }
+            if both_colours.0 && both_colours.1 {
+                push(out, "boden_mate", "Delivers Boden's mate (two bishops on crossing diagonals)");
+                return;
+            }
+        }
+    }
+
+    // Anastasia's mate: knight on e7/e2 + rook on h-file (or mirror a-file).
+    let king_on_rim = opp_king.file() == File::H || opp_king.file() == File::A;
+    if king_on_rim && matches!(ctx.moved.role, Role::Rook | Role::Queen) {
+        let our_knights = board.by_piece(Piece { color: ctx.mover, role: Role::Knight });
+        let knight_squares = if opp_king.file() == File::H {
+            match ctx.mover {
+                Color::White => [Square::E7, Square::E6],
+                Color::Black => [Square::E2, Square::E3],
+            }
+        } else {
+            match ctx.mover {
+                Color::White => [Square::D7, Square::D6],
+                Color::Black => [Square::D2, Square::D3],
+            }
+        };
+        let knight_in_place = knight_squares.iter().any(|sq| our_knights.contains(*sq));
+        if knight_in_place {
+            push(out, "anastasia_mate", "Delivers Anastasia's mate (knight + rook on the rim)");
+            return;
+        }
+    }
+
+    // Arabian mate: rook + knight, king in corner.
+    let in_corner = matches!(opp_king, Square::A1 | Square::H1 | Square::A8 | Square::H8);
+    if in_corner && matches!(ctx.moved.role, Role::Rook | Role::Knight) {
+        let our_rooks = board.by_piece(Piece { color: ctx.mover, role: Role::Rook });
+        let our_knights = board.by_piece(Piece { color: ctx.mover, role: Role::Knight });
+        let rook_on_line = our_rooks.into_iter().any(|sq|
+            sq.file() == opp_king.file() || sq.rank() == opp_king.rank()
+        );
+        let knight_nearby = our_knights.into_iter().any(|sq| {
+            let df = (sq.file() as i32 - kf).abs();
+            let dr = (sq.rank() as i32 - kr).abs();
+            df.max(dr) <= 2
+        });
+        if rook_on_line && knight_nearby {
+            push(out, "arabian_mate", "Delivers an Arabian mate");
+            return;
+        }
+    }
+
+    // Lolli's mate: queen on h-file (or g-file) supported by a friendly
+    // pawn or piece, king on g8/g1 with the fianchetto pawn missing.
+    if ctx.moved.role == Role::Queen
+        && matches!(opp_king, Square::G1 | Square::G8 | Square::H1 | Square::H8)
+    {
+        let our_queens = board.by_piece(Piece { color: ctx.mover, role: Role::Queen });
+        let queen_on_line = our_queens.into_iter().any(|sq|
+            (sq.file() == opp_king.file() && (sq.rank() as i32 - kr).abs() <= 2)
+            || (sq.rank() == opp_king.rank() && (sq.file() as i32 - kf).abs() <= 2)
+        );
+        if queen_on_line {
+            push(out, "lolli_mate", "Delivers a Lolli-style mate");
+            return;
+        }
+    }
+
+    // Epaulette mate: king's own pieces flank it, queen or rook
+    // delivers from the front. Detection: enemy king has its left/right
+    // squares blocked by enemy pieces, and the front (toward attacker)
+    // square is the source of the check.
+    let left_sq = if kf > 0 { Some(Square::from_coords(File::new((kf - 1) as u32), Rank::new(kr as u32))) } else { None };
+    let right_sq = if kf < 7 { Some(Square::from_coords(File::new((kf + 1) as u32), Rank::new(kr as u32))) } else { None };
+    let blocked = |sq: Option<Square>| -> bool {
+        match sq {
+            None => true, // off-board counts as blocked
+            Some(s) => matches!(board.piece_at(s), Some(p) if p.color == ctx.opp),
+        }
+    };
+    if blocked(left_sq) && blocked(right_sq)
+        && matches!(ctx.moved.role, Role::Queen | Role::Rook)
+    {
+        push(out, "epaulette_mate", "Delivers an epaulette mate");
+        return;
+    }
+}
+
 fn detect_smothered_mate_hint(ctx: &Context, out: &mut Vec<Motif>) {
     // Knight check where every adjacent square to the enemy king is
     // occupied by enemy pieces. Strong hint of imminent smothered mate.
+    if out.iter().any(|m| ["checkmate","smothered_mate","double_check"].contains(&m.id.as_str())) {
+        return;
+    }
     if ctx.moved.role != Role::Knight || !ctx.after.is_check() {
         return;
     }
@@ -1455,13 +1640,34 @@ fn detect_long_diagonal(ctx: &Context, out: &mut Vec<Motif>) {
     }
     let from_diag = on_long_diag(ctx.from);
     let to_diag = on_long_diag(ctx.to);
-    if to_diag.is_some() && from_diag != to_diag {
-        push(
-            out,
-            "long_diagonal",
-            format!("Posts on the long {} diagonal", to_diag.unwrap()),
-        );
+    let diag_name = match to_diag { Some(n) => n, None => return };
+    if from_diag == to_diag { return; }
+
+    // Require meaningful reach: the bishop/queen must see at least 5 of
+    // the 8 squares on the long diagonal from its new post (any blocker
+    // breaks the count). A queen on b2 with the diagonal blocked at b2-c3
+    // by a pawn isn't really "posting on the long a1-h8 diagonal" — it
+    // just happens to stand on a square the diagonal passes through.
+    let board = ctx.after.board();
+    let occ = board.occupied();
+    let attacks = bishop_attacks(ctx.to, occ);
+    let mut diag_squares = Bitboard::EMPTY;
+    for i in 0..8u32 {
+        let s = if diag_name == "a1-h8" {
+            Square::from_coords(File::new(i), Rank::new(i))
+        } else {
+            Square::from_coords(File::new(i), Rank::new(7 - i))
+        };
+        diag_squares |= Bitboard::from_square(s);
     }
+    let visible = (attacks | Bitboard::from_square(ctx.to)) & diag_squares;
+    if visible.count() < 5 { return; }
+
+    push(
+        out,
+        "long_diagonal",
+        format!("Posts on the long {} diagonal", diag_name),
+    );
 }
 
 fn on_long_diag(sq: Square) -> Option<&'static str> {
@@ -1733,19 +1939,17 @@ fn detect_attacks_pawn(ctx: &Context, out: &mut Vec<Motif>) {
         } else {
             ""
         };
-        // *** Phrase choice: "Attacks" implies winnability. ***
+        // Phrase choice — the move did NOT capture (capture motif already
+        // covers that path).  So the verb describes a threat, not material
+        // already won.  "Wins" was firing here previously, but "X wins the
+        // pawn" implies the gain has happened, which it hasn't.
         //
-        // User feedback: "attacks doesn't make sense when its defended,
-        // rather it shd be eyes the X or something." Right.
-        // Lexical mapping:
-        //   - SEE > 0  AND  no defender → "Wins the {file}-pawn"
-        //   - SEE > 0  WITH  defenders   → "Attacks the {file}-pawn"
-        //   - SEE = 0  ON a weakness     → "Pressures the {file}-pawn"
-        //   - otherwise we'd already have skipped above.
+        //   SEE > 0, no defender   → "Threatens the {f}-pawn"   (will win it next move)
+        //   SEE > 0, defended      → "Attacks the {f}-pawn"     (contested)
+        //   SEE = 0, weak pawn     → "Pressures the {f}-pawn"   (no immediate gain)
         let verb = if see_val > 0 {
-            if defenders == 0 { "Wins" } else { "Attacks" }
+            if defenders == 0 { "Threatens" } else { "Attacks" }
         } else {
-            // see_val == 0 with a weakness: applying pressure, not winning.
             "Pressures"
         };
         push(
@@ -1910,10 +2114,32 @@ fn detect_pawn_specific(ctx: &Context, out: &mut Vec<Motif>) {
             push(out, "pawn_storm", "Joins the pawn storm");
         }
     }
-    let mp_a = pawns_by_file(ctx.after.board(), ctx.mover);
-    let f = ctx.to.file() as usize;
-    if mp_a[f] >= 1 && is_isolated_file(f, &mp_a) {
-        push(out, "isolated_pawn", "Isolates the pawn");
+    // "Isolates the pawn" should fire only when the move CREATES a newly-
+    // isolated pawn (for either side). A push that doesn't change file
+    // adjacency leaves isolation unchanged, and previously a4 / e6 / c4
+    // were all flagged "Isolates the pawn" simply because their file was
+    // already isolated.  Compare per-file pawn counts before/after for
+    // each side and emit only if a side's set of isolated files grew.
+    let isolated_files = |board: &Board, color: Color| -> u8 {
+        let counts = pawns_by_file(board, color);
+        let mut isolated_count = 0u8;
+        for f in 0..8usize {
+            if counts[f] >= 1 && is_isolated_file(f, &counts) {
+                isolated_count += counts[f];
+            }
+        }
+        isolated_count
+    };
+    let our_iso_before = isolated_files(ctx.before.board(), ctx.mover);
+    let our_iso_after  = isolated_files(ctx.after.board(),  ctx.mover);
+    let opp_iso_before = isolated_files(ctx.before.board(), ctx.opp);
+    let opp_iso_after  = isolated_files(ctx.after.board(),  ctx.opp);
+    if opp_iso_after > opp_iso_before {
+        push(out, "isolated_pawn", "Saddles the opponent with an isolated pawn");
+    } else if our_iso_after > our_iso_before {
+        // We isolated our OWN pawn — usually a side-effect, not a goal.
+        // Lower-priority phrasing.
+        push(out, "isolated_pawn", "Leaves an isolated pawn");
     }
 }
 
@@ -2130,10 +2356,7 @@ fn detect_develops(ctx: &Context, out: &mut Vec<Motif>) {
 
     match ctx.phase {
         Phase::Opening if off_back_rank => {
-            // Bare "develops" emits no phrase; the composer combines it
-            // with prepares-castling / centralizes / outpost when those
-            // also fire. Without a richer companion we don't say anything.
-            push(out, "develops", "");
+            push(out, "develops", format!("Develops the {}", role_name(ctx.moved.role)));
         }
         Phase::Middlegame => {
             // Only fire if the new square is meaningfully better — i.e.
@@ -2229,65 +2452,64 @@ fn detect_back_rank_mate_threat(ctx: &Context, out: &mut Vec<Motif>) {
     if out.iter().any(|m| ["checkmate","check","discovered_check","double_check"].contains(&m.id.as_str())) {
         return;
     }
-    let board = ctx.after.board();
-    let opp_king = match find_king(board, ctx.opp) { Some(k) => k, None => return };
-    let back_rank = match ctx.opp {
-        Color::White => Rank::First,
-        Color::Black => Rank::Eighth,
-    };
-    if opp_king.rank() != back_rank { return; }
-
-    // Escape squares: rank one in from the king, files kf-1..kf+1.
-    let escape_rank = match ctx.opp {
-        Color::White => Rank::Second,
-        Color::Black => Rank::Seventh,
-    };
-    let kf = opp_king.file() as i32;
-    let mut escape_squares = Vec::new();
-    for df in [-1, 0, 1] {
-        let f = kf + df;
-        if !(0..8).contains(&f) { continue; }
-        escape_squares.push(Square::from_coords(File::new(f as u32), escape_rank));
-    }
-    // All escape squares must be unsafe (blocked by enemy pawn shield or
-    // attacked by us).
-    let our_attacks = compute_all_attacks(board, ctx.mover);
-    let any_escape = escape_squares.iter().any(|s| {
-        let occ = board.piece_at(*s);
-        let blocked_by_friend = matches!(occ, Some(p) if p.color == ctx.opp);
-        let attacked = our_attacks.contains(*s);
-        !blocked_by_friend && !attacked
-    });
-    if any_escape { return; }
-
-    // Do we have an R or Q that can reach the back rank? Look at our
-    // R/Q attacks against any square on the king's rank (excluding king
-    // square, where direct check would have been captured by the
-    // discovered/check branches).
-    let kr = opp_king.rank();
-    let mut rank_squares = Bitboard::EMPTY;
-    for f in 0..8 {
-        let s = Square::from_coords(File::new(f), kr);
-        if s != opp_king {
-            rank_squares |= Bitboard::from_square(s);
-        }
-    }
-    let our_rooks_queens =
-        (board.rooks() | board.queens()) & board.by_color(ctx.mover);
-    let mut threatens = false;
-    for sq in our_rooks_queens {
-        let attacks = match board.piece_at(sq).map(|p| p.role) {
-            Some(Role::Rook) => rook_attacks(sq, board.occupied()),
-            Some(Role::Queen) => queen_attacks(sq, board.occupied()),
-            _ => continue,
+    // Compute "back-rank mate is threatened against `opp` on this board".
+    // Returns true if king is on its back rank, no escape squares, and we
+    // have a R/Q with a path to the king's rank.
+    let evaluate = |board: &Board, mover: Color, opp: Color| -> bool {
+        let opp_king = match find_king(board, opp) { Some(k) => k, None => return false };
+        let back_rank = match opp {
+            Color::White => Rank::First,
+            Color::Black => Rank::Eighth,
         };
-        if (attacks & rank_squares).any() {
-            threatens = true;
-            break;
+        if opp_king.rank() != back_rank { return false; }
+        let escape_rank = match opp {
+            Color::White => Rank::Second,
+            Color::Black => Rank::Seventh,
+        };
+        let kf = opp_king.file() as i32;
+        let mut escape_squares = Vec::new();
+        for df in [-1, 0, 1] {
+            let f = kf + df;
+            if !(0..8).contains(&f) { continue; }
+            escape_squares.push(Square::from_coords(File::new(f as u32), escape_rank));
         }
-    }
-    if !threatens { return; }
+        let our_attacks = compute_all_attacks(board, mover);
+        let any_escape = escape_squares.iter().any(|s| {
+            let occ = board.piece_at(*s);
+            let blocked_by_friend = matches!(occ, Some(p) if p.color == opp);
+            let attacked = our_attacks.contains(*s);
+            !blocked_by_friend && !attacked
+        });
+        if any_escape { return false; }
 
+        let kr = opp_king.rank();
+        let mut rank_squares = Bitboard::EMPTY;
+        for f in 0..8 {
+            let s = Square::from_coords(File::new(f), kr);
+            if s != opp_king {
+                rank_squares |= Bitboard::from_square(s);
+            }
+        }
+        let our_rooks_queens = (board.rooks() | board.queens()) & board.by_color(mover);
+        for sq in our_rooks_queens {
+            let attacks = match board.piece_at(sq).map(|p| p.role) {
+                Some(Role::Rook) => rook_attacks(sq, board.occupied()),
+                Some(Role::Queen) => queen_attacks(sq, board.occupied()),
+                _ => continue,
+            };
+            if (attacks & rank_squares).any() {
+                return true;
+            }
+        }
+        false
+    };
+    // Only fire when the move CREATES the threat (delta from before→after).
+    // Otherwise every quiet move in a position with a pre-existing threat
+    // would be flagged as "Threatens back-rank mate", which the audit
+    // showed firing on every white king move in position 29.
+    let before_threat = evaluate(ctx.before.board(), ctx.mover, ctx.opp);
+    let after_threat = evaluate(ctx.after.board(), ctx.mover, ctx.opp);
+    if !after_threat || before_threat { return; }
     push(out, "back_rank_mate_threat", "Threatens back-rank mate");
 }
 
@@ -2697,6 +2919,18 @@ fn priority_of(id: &str) -> u32 {
     match id {
         // Game-defining tactical moves.
         "checkmate" => 0,
+        // Named-mate variants. They REPLACE the role of the bare checkmate
+        // in the tagline composer when both fire (the named one is more
+        // specific) — composer drops `checkmate` if a named-mate motif is
+        // present. Priority just below 0 so they sort before everything.
+        "smothered_mate"   => 0,
+        "back_rank_mate"   => 0,
+        "boden_mate"       => 0,
+        "anastasia_mate"   => 0,
+        "arabian_mate"     => 0,
+        "lolli_mate"       => 0,
+        "epaulette_mate"   => 0,
+        "damiano_mate"     => 0,
         "double_check" => 1,            // strongest single-ply tactic
         "sacrifice" => 2,
         "greek_gift" => 3,              // famous named pattern

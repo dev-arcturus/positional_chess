@@ -330,10 +330,27 @@ fn mob_table(role: Role) -> Option<&'static [Tapered]> {
     }
 }
 
+/// Mobility scaling factor.
+///
+/// The Stockfish 11 mobility tables we copy were tuned alongside ~30 other
+/// eval heads (king-zone attackers, threats, space, etc.). Used raw in our
+/// much-simpler evaluator they dominate: opening 1.e4 jumps the score by
+/// ~1 pawn purely from the bishop+queen diagonal opening up.  Damping
+/// brings the per-move HCE delta closer to the Stockfish search delta on
+/// the audit corpus without distorting the relative ordering of moves.
+const MOB_SCALE_NUM: i32 = 2;
+const MOB_SCALE_DEN: i32 = 5;
+
 #[inline]
 fn mobility_lookup(role: Role, count: usize) -> Tapered {
     match mob_table(role) {
-        Some(tbl) => tbl[count.min(tbl.len() - 1)],
+        Some(tbl) => {
+            let raw = tbl[count.min(tbl.len() - 1)];
+            Tapered::new(
+                raw.mg * MOB_SCALE_NUM / MOB_SCALE_DEN,
+                raw.eg * MOB_SCALE_NUM / MOB_SCALE_DEN,
+            )
+        }
         None => Tapered::ZERO,
     }
 }

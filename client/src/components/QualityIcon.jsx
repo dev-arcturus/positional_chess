@@ -53,10 +53,29 @@ const ICONS = {
       fill="none"
     />
   ),
-  // Good / neutral: rendered as nothing (parent picks the size; this
-  // returns `null` so the parent can omit the pill entirely).
-  good: null,
+  // Good: a soft checkmark — visible signal but lighter than excellent.
+  good: (
+    <path
+      d="M5 12.5l4 4 10-10"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+      opacity="0.85"
+    />
+  ),
   neutral: null,
+  // Book: open-book glyph — known opening-theory move.
+  book: (
+    <path
+      d="M4 5h6c1.7 0 3 1 3 2v12c0-1-1.3-2-3-2H4V5zm16 0h-6c-1.7 0-3 1-3 2v12c0-1 1.3-2 3-2h6V5z"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  ),
   // Inaccuracy: "?!" — a question mark with a small dot beside it.
   inaccuracy: (
     <g>

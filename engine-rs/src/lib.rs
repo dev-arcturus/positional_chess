@@ -68,8 +68,13 @@ pub fn analyze(fen_before: &str, uci: &str) -> JsValue {
     match analyze_inner(fen_before, uci) {
         Ok(result) => serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL),
         Err(e) => {
-            let err = serde_json::json!({ "error": e });
-            serde_wasm_bindgen::to_value(&err).unwrap_or(JsValue::NULL)
+            // Use a typed struct so the JS side gets a plain object — not a
+            // Map. (`serde_json::json!{...}` serialises as a Map by default
+            // through serde-wasm-bindgen, which silently breaks `.error`
+            // accesses on the consumer side.)
+            #[derive(Serialize)]
+            struct ErrResult { error: String }
+            serde_wasm_bindgen::to_value(&ErrResult { error: e }).unwrap_or(JsValue::NULL)
         }
     }
 }
@@ -111,8 +116,13 @@ pub fn evaluate_fen(fen: &str) -> JsValue {
             serde_wasm_bindgen::to_value(&e).unwrap_or(JsValue::NULL)
         }
         Err(e) => {
-            let err = serde_json::json!({ "error": e });
-            serde_wasm_bindgen::to_value(&err).unwrap_or(JsValue::NULL)
+            // Use a typed struct so the JS side gets a plain object — not a
+            // Map. (`serde_json::json!{...}` serialises as a Map by default
+            // through serde-wasm-bindgen, which silently breaks `.error`
+            // accesses on the consumer side.)
+            #[derive(Serialize)]
+            struct ErrResult { error: String }
+            serde_wasm_bindgen::to_value(&ErrResult { error: e }).unwrap_or(JsValue::NULL)
         }
     }
 }
@@ -129,8 +139,13 @@ pub fn piece_contributions(fen: &str) -> JsValue {
             serde_wasm_bindgen::to_value(&pcs).unwrap_or(JsValue::NULL)
         }
         Err(e) => {
-            let err = serde_json::json!({ "error": e });
-            serde_wasm_bindgen::to_value(&err).unwrap_or(JsValue::NULL)
+            // Use a typed struct so the JS side gets a plain object — not a
+            // Map. (`serde_json::json!{...}` serialises as a Map by default
+            // through serde-wasm-bindgen, which silently breaks `.error`
+            // accesses on the consumer side.)
+            #[derive(Serialize)]
+            struct ErrResult { error: String }
+            serde_wasm_bindgen::to_value(&ErrResult { error: e }).unwrap_or(JsValue::NULL)
         }
     }
 }
@@ -144,8 +159,13 @@ pub fn explain_position(fen: &str) -> JsValue {
     match explanation::static_explanation(fen) {
         Ok(e) => serde_wasm_bindgen::to_value(&e).unwrap_or(JsValue::NULL),
         Err(e) => {
-            let err = serde_json::json!({ "error": e });
-            serde_wasm_bindgen::to_value(&err).unwrap_or(JsValue::NULL)
+            // Use a typed struct so the JS side gets a plain object — not a
+            // Map. (`serde_json::json!{...}` serialises as a Map by default
+            // through serde-wasm-bindgen, which silently breaks `.error`
+            // accesses on the consumer side.)
+            #[derive(Serialize)]
+            struct ErrResult { error: String }
+            serde_wasm_bindgen::to_value(&ErrResult { error: e }).unwrap_or(JsValue::NULL)
         }
     }
 }
@@ -209,15 +229,12 @@ fn analyze_inner(fen_before: &str, uci: &str) -> Result<AnalysisResult, String> 
         None
     };
 
-    let motifs = if terminal == Some("checkmate") {
-        vec![Motif {
-            id: "checkmate".into(),
-            phrase: "Delivers checkmate".into(),
-            priority: 0,
-        }]
-    } else {
-        detect_all(&pos, &after, &mv, terminal)
-    };
+    // Run the full detector pass even on checkmate so named-pattern
+    // detectors (smothered, anastasia, boden, arabian, lolli, back-rank,
+    // discovered-check) can identify *which* mate was delivered. Detectors
+    // see `terminal` and either suppress threat-versions of themselves or
+    // emit the named-mate variant.
+    let motifs = detect_all(&pos, &after, &mv, terminal);
 
     let fen_after = Fen::from_position(after, shakmaty::EnPassantMode::Legal).to_string();
 

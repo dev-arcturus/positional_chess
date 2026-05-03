@@ -5,6 +5,7 @@
 
 import { Chess } from 'chess.js';
 import { analyzeMove as wasmAnalyzeMove, isReady as wasmReady } from './analyzer-rs.js';
+import { findOpening } from './openings.js';
 
 const PIECE_VALUE = { p: 100, n: 300, b: 320, r: 500, q: 900, k: 20_000 };
 const PIECE_NAME  = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
@@ -431,6 +432,7 @@ const COMPLEXITY_BAND_CP = 50; // moves within this much of best are "plausible"
 
 function classifyMove({
   fenBefore,
+  fenAfter,
   moveUCI,
   moverColor,
   evalBeforeWhite,
@@ -534,6 +536,18 @@ function classifyMove({
   })();
   const onlyLegalMove = topMoves && topMoves.length === 1;
 
+  // Book-move detection: a move is "book" if the resulting position is
+  // a recognised opening-theory position. This trumps almost everything
+  // else — even when SF prefers another move, playing into known theory
+  // is still a defensible move at low loss. We gate on loss < 12 so a
+  // book-named position resulting from a real blunder is NOT mislabeled.
+  const isBookMove = (() => {
+    if (!fenAfter) return false;
+    if (loss >= 12) return false; // SF strongly disagrees → not really "book"
+    const opening = findOpening(fenAfter);
+    return !!opening;
+  })();
+
   let quality;
   if (missedMate) {
     quality = 'missed_mate';
@@ -542,6 +556,10 @@ function classifyMove({
   } else if (isBestMove && (isOnlyMove || isCriticalPosition)
              && !isObviousCapture && !onlyLegalMove) {
     quality = 'great';
+  } else if (isBookMove) {
+    // Recognised opening theory. Show the book glyph instead of the
+    // colour-coded best/excellent — book moves are by definition fine.
+    quality = 'book';
   } else if (isBestMove) {
     quality = 'best';
   } else if (lostWin) {
@@ -600,6 +618,7 @@ export function explainMove(fenBefore, fenAfter, moveUCI, evalBefore, evalAfter,
   // Classify against engine top moves.
   const cls = classifyMove({
     fenBefore,
+    fenAfter,
     moveUCI,
     moverColor: sideToMove,
     evalBeforeWhite: evalBefore,

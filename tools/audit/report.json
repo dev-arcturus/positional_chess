@@ -1,0 +1,6147 @@
+[
+  {
+    "idx": 0,
+    "note": "Starting position",
+    "kind": "opening",
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "stm": "w",
+    "sf_eval_white": 34,
+    "our_eval_white": 0,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 0,
+        "eg": 0
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Roughly equal",
+    "themes": [],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "e2e4",
+        "san": "e4",
+        "quality": "best",
+        "sf_cp_white_after": 34,
+        "sf_mate": null,
+        "our_cp_white_after": 94,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 94,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Stakes a claim in the center"
+          }
+        ],
+        "pv": [
+          "e2e4",
+          "c7c5",
+          "g1f3",
+          "d7d6",
+          "d2d4",
+          "c5d4"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d2d4",
+        "san": "d4",
+        "quality": "best",
+        "sf_cp_white_after": 26,
+        "sf_mate": null,
+        "our_cp_white_after": 93,
+        "sf_delta_stm": -8,
+        "our_delta_stm": 93,
+        "wr_loss": 0.73,
+        "motifs": [
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Stakes a claim in the center"
+          }
+        ],
+        "pv": [
+          "d2d4",
+          "d7d5",
+          "c2c4",
+          "e7e6",
+          "b1c3",
+          "g8f6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "g1f3",
+        "san": "Nf3",
+        "quality": "excellent",
+        "sf_cp_white_after": 22,
+        "sf_mate": null,
+        "our_cp_white_after": 58,
+        "sf_delta_stm": -12,
+        "our_delta_stm": 58,
+        "wr_loss": 1.1,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "g1f3",
+          "d7d5",
+          "e2e3",
+          "g8f6",
+          "d2d4",
+          "e7e6"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "c2c4",
+        "san": "c4",
+        "quality": "excellent",
+        "sf_cp_white_after": 21,
+        "sf_mate": null,
+        "our_cp_white_after": 31,
+        "sf_delta_stm": -13,
+        "our_delta_stm": 31,
+        "wr_loss": 1.19,
+        "motifs": [
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Stakes a claim in the center"
+          }
+        ],
+        "pv": [
+          "c2c4",
+          "e7e5",
+          "g2g3",
+          "g8f6",
+          "f1g2",
+          "c7c6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "e2e3",
+        "san": "e3",
+        "quality": "excellent",
+        "sf_cp_white_after": 21,
+        "sf_mate": null,
+        "our_cp_white_after": 88,
+        "sf_delta_stm": -13,
+        "our_delta_stm": 88,
+        "wr_loss": 1.19,
+        "motifs": [],
+        "pv": [
+          "e2e3",
+          "e7e5",
+          "d2d4",
+          "e5d4",
+          "e3d4",
+          "d7d5"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 1,
+    "note": "After 1.e4 e5",
+    "kind": "opening",
+    "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+    "stm": "w",
+    "sf_eval_white": 33,
+    "our_eval_white": 0,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 0,
+        "eg": 0
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Roughly equal",
+    "themes": [],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "g1f3",
+        "san": "Nf3",
+        "quality": "best",
+        "sf_cp_white_after": 33,
+        "sf_mate": null,
+        "our_cp_white_after": 42,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 42,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "attacks_pawn",
+            "priority": 70,
+            "phrase": "Threatens the e-pawn"
+          },
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "g1f3",
+          "b8c6",
+          "f1c4",
+          "g8f6",
+          "f3g5",
+          "d7d5"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "b1c3",
+        "san": "Nc3",
+        "quality": "best",
+        "sf_cp_white_after": 31,
+        "sf_mate": null,
+        "our_cp_white_after": 55,
+        "sf_delta_stm": -2,
+        "our_delta_stm": 55,
+        "wr_loss": 0.18,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "b1c3",
+          "b8c6",
+          "g1f3",
+          "g8f6",
+          "f1b5",
+          "f8d6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "d2d4",
+        "san": "d4",
+        "quality": "excellent",
+        "sf_cp_white_after": 14,
+        "sf_mate": null,
+        "our_cp_white_after": 83,
+        "sf_delta_stm": -19,
+        "our_delta_stm": 83,
+        "wr_loss": 1.75,
+        "motifs": [
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Stakes a claim in the center"
+          },
+          {
+            "id": "pawn_lever",
+            "priority": 91,
+            "phrase": "Creates a pawn lever"
+          }
+        ],
+        "pv": [
+          "d2d4",
+          "e5d4",
+          "g1f3",
+          "f8b4",
+          "b1d2",
+          "b8c6"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "g1e2",
+        "san": "Ne2",
+        "quality": "excellent",
+        "sf_cp_white_after": 4,
+        "sf_mate": null,
+        "our_cp_white_after": -22,
+        "sf_delta_stm": -29,
+        "our_delta_stm": -22,
+        "wr_loss": 2.67,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "g1e2",
+          "g8f6",
+          "d2d4",
+          "e5d4",
+          "e4e5",
+          "f6e4"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "f1c4",
+        "san": "Bc4",
+        "quality": "excellent",
+        "sf_cp_white_after": 2,
+        "sf_mate": null,
+        "our_cp_white_after": 32,
+        "sf_delta_stm": -31,
+        "our_delta_stm": 32,
+        "wr_loss": 2.85,
+        "motifs": [
+          {
+            "id": "pin",
+            "priority": 7,
+            "phrase": "Pins the pawn to the knight"
+          },
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "f1c4",
+          "g8f6",
+          "b1c3",
+          "b8c6",
+          "d2d3",
+          "c6a5"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 2,
+    "note": "1.e4 e5 2.Nf3 Nf6 — Petroff",
+    "kind": "opening",
+    "fen": "rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+    "stm": "w",
+    "sf_eval_white": 46,
+    "our_eval_white": 0,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 0,
+        "eg": 0
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Roughly equal",
+    "themes": [
+      "hanging_pieces",
+      "hanging_pieces"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "f3e5",
+        "san": "Nxe5",
+        "quality": "best",
+        "sf_cp_white_after": 46,
+        "sf_mate": null,
+        "our_cp_white_after": 140,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 140,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "capture",
+            "priority": 19,
+            "phrase": "Captures the pawn"
+          },
+          {
+            "id": "attacks_king",
+            "priority": 72,
+            "phrase": "Knight on e5 attacks 2 squares around the king (d7, f7)"
+          },
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Centralizes the piece"
+          }
+        ],
+        "pv": [
+          "f3e5",
+          "d7d6",
+          "e5f3",
+          "f6e4",
+          "d2d4",
+          "d6d5"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d2d4",
+        "san": "d4",
+        "quality": "excellent",
+        "sf_cp_white_after": 32,
+        "sf_mate": null,
+        "our_cp_white_after": 86,
+        "sf_delta_stm": -14,
+        "our_delta_stm": 86,
+        "wr_loss": 1.28,
+        "motifs": [
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Stakes a claim in the center"
+          },
+          {
+            "id": "pawn_lever",
+            "priority": 91,
+            "phrase": "Creates a pawn lever"
+          }
+        ],
+        "pv": [
+          "d2d4",
+          "f6e4",
+          "f3e5",
+          "d7d5",
+          "b1d2",
+          "f8d6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "b1c3",
+        "san": "Nc3",
+        "quality": "excellent",
+        "sf_cp_white_after": 21,
+        "sf_mate": null,
+        "our_cp_white_after": 55,
+        "sf_delta_stm": -25,
+        "our_delta_stm": 55,
+        "wr_loss": 2.29,
+        "motifs": [
+          {
+            "id": "defends",
+            "priority": 83,
+            "phrase": "Defends the pawn"
+          },
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "b1c3",
+          "b8c6",
+          "d2d4",
+          "e5d4",
+          "f3d4",
+          "f8b4"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "d2d3",
+        "san": "d3",
+        "quality": "good",
+        "sf_cp_white_after": -3,
+        "sf_mate": null,
+        "our_cp_white_after": 59,
+        "sf_delta_stm": -49,
+        "our_delta_stm": 59,
+        "wr_loss": 4.5,
+        "motifs": [
+          {
+            "id": "defends",
+            "priority": 83,
+            "phrase": "Defends the pawn"
+          }
+        ],
+        "pv": [
+          "d2d3",
+          "b8c6",
+          "c2c4",
+          "f8c5",
+          "f1e2",
+          "d7d6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "c2c3",
+        "san": "c3",
+        "quality": "good",
+        "sf_cp_white_after": -12,
+        "sf_mate": null,
+        "our_cp_white_after": 20,
+        "sf_delta_stm": -58,
+        "our_delta_stm": 20,
+        "wr_loss": 5.33,
+        "motifs": [],
+        "pv": [
+          "c2c3",
+          "f6e4",
+          "d2d3",
+          "e4f6",
+          "f3e5",
+          "d7d6"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 3,
+    "note": "Italian: White Bc4 set up",
+    "kind": "opening",
+    "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
+    "stm": "b",
+    "sf_eval_white": 25,
+    "our_eval_white": 23,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 28,
+        "eg": 26
+      },
+      "mobility": {
+        "mg": -5,
+        "eg": 5
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Roughly equal",
+    "themes": [],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "f8c5",
+        "san": "Bc5",
+        "quality": "best",
+        "sf_cp_white_after": 25,
+        "sf_mate": null,
+        "our_cp_white_after": -9,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 32,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "f8c5",
+          "e1g1",
+          "g8f6",
+          "d2d3",
+          "d7d6",
+          "c2c3"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d7d6",
+        "san": "d6",
+        "quality": "best",
+        "sf_cp_white_after": 34,
+        "sf_mate": null,
+        "our_cp_white_after": -24,
+        "sf_delta_stm": -9,
+        "our_delta_stm": 47,
+        "wr_loss": 0.83,
+        "motifs": [],
+        "pv": [
+          "d7d6",
+          "b1c3",
+          "f8e7",
+          "d2d4",
+          "e5d4",
+          "f3d4"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "g8f6",
+        "san": "Nf6",
+        "quality": "best",
+        "sf_cp_white_after": 34,
+        "sf_mate": null,
+        "our_cp_white_after": -19,
+        "sf_delta_stm": -9,
+        "our_delta_stm": 42,
+        "wr_loss": 0.83,
+        "motifs": [
+          {
+            "id": "attacks_pawn",
+            "priority": 70,
+            "phrase": "Threatens the e-pawn"
+          },
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "g8f6",
+          "f3g5",
+          "d7d5",
+          "e4d5",
+          "c6a5",
+          "c4b5"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "f8e7",
+        "san": "Be7",
+        "quality": "excellent",
+        "sf_cp_white_after": 40,
+        "sf_mate": null,
+        "our_cp_white_after": 26,
+        "sf_delta_stm": -15,
+        "our_delta_stm": -3,
+        "wr_loss": 1.38,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "f8e7",
+          "d2d4",
+          "e5d4",
+          "f3d4",
+          "g8f6",
+          "d4c6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "a7a6",
+        "san": "a6",
+        "quality": "good",
+        "sf_cp_white_after": 71,
+        "sf_mate": null,
+        "our_cp_white_after": -1,
+        "sf_delta_stm": -46,
+        "our_delta_stm": 24,
+        "wr_loss": 4.2,
+        "motifs": [],
+        "pv": [
+          "a7a6",
+          "e1g1",
+          "g8f6",
+          "d2d4",
+          "e5d4",
+          "f1e1"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 4,
+    "note": "Pirc / KID-ish setup",
+    "kind": "opening",
+    "fen": "rnbqk2r/ppp1ppbp/3p1np1/8/3PP3/2N2N2/PPP2PPP/R1BQKB1R w KQkq - 0 5",
+    "stm": "w",
+    "sf_eval_white": 54,
+    "our_eval_white": 66,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 47,
+        "eg": 24
+      },
+      "mobility": {
+        "mg": 35,
+        "eg": 43
+      },
+      "pawns": {
+        "mg": -16,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Slight edge for White",
+    "themes": [
+      "piece_activity",
+      "space_advantage",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "c1e3",
+        "san": "Be3",
+        "quality": "best",
+        "sf_cp_white_after": 54,
+        "sf_mate": null,
+        "our_cp_white_after": 105,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 39,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "c1e3",
+          "e8g8",
+          "d1d2",
+          "c7c5",
+          "d4c5",
+          "d6c5"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "h2h3",
+        "san": "h3",
+        "quality": "best",
+        "sf_cp_white_after": 54,
+        "sf_mate": null,
+        "our_cp_white_after": 91,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 25,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "h2h3",
+          "e8g8",
+          "c1e3",
+          "c7c6",
+          "a2a4",
+          "b8d7"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "c1g5",
+        "san": "Bg5",
+        "quality": "best",
+        "sf_cp_white_after": 54,
+        "sf_mate": null,
+        "our_cp_white_after": 134,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 68,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "c1g5",
+          "d6d5",
+          "f1d3",
+          "d5e4",
+          "c3e4",
+          "e8g8"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "c1f4",
+        "san": "Bf4",
+        "quality": "best",
+        "sf_cp_white_after": 47,
+        "sf_mate": null,
+        "our_cp_white_after": 108,
+        "sf_delta_stm": -7,
+        "our_delta_stm": 42,
+        "wr_loss": 0.64,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "c1f4",
+          "e8g8",
+          "d1d2",
+          "c7c5",
+          "d4d5",
+          "a7a6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "f1d3",
+        "san": "Bd3",
+        "quality": "excellent",
+        "sf_cp_white_after": 42,
+        "sf_mate": null,
+        "our_cp_white_after": 97,
+        "sf_delta_stm": -12,
+        "our_delta_stm": 31,
+        "wr_loss": 1.1,
+        "motifs": [
+          {
+            "id": "prepares_castling_kingside",
+            "priority": 80,
+            "phrase": "Clears the way for kingside castle"
+          },
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "f1d3",
+          "c8g4",
+          "h2h3",
+          "g4f3",
+          "d1f3",
+          "b8c6"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 5,
+    "note": "QGD-ish; both sides developed",
+    "kind": "middlegame",
+    "fen": "r1bq1rk1/pp1n1ppp/2pbpn2/3p4/2PP4/2NBPN2/PP1Q1PPP/R3K2R w KQ - 0 9",
+    "stm": "w",
+    "sf_eval_white": -479,
+    "our_eval_white": -396,
+    "our_phase": 23,
+    "our_breakdown": {
+      "material": {
+        "mg": -365,
+        "eg": -297
+      },
+      "psqt": {
+        "mg": -29,
+        "eg": 46
+      },
+      "mobility": {
+        "mg": 29,
+        "eg": 64
+      },
+      "pawns": {
+        "mg": -8,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": -30,
+        "eg": -50
+      }
+    },
+    "verdict": "Black winning (+4.0)",
+    "themes": [
+      "material_edge",
+      "bishop_pair",
+      "dark_complex",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "g2g4",
+        "san": "g4",
+        "quality": "best",
+        "sf_cp_white_after": -479,
+        "sf_mate": null,
+        "our_cp_white_after": -422,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -26,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "g2g4",
+          "e6e5",
+          "g4g5",
+          "e5e4",
+          "g5f6",
+          "d8f6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "e1c1",
+        "san": "O-O-O",
+        "quality": "best",
+        "sf_cp_white_after": -480,
+        "sf_mate": null,
+        "our_cp_white_after": -357,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 39,
+        "wr_loss": 0.05,
+        "motifs": [
+          {
+            "id": "castles_queenside",
+            "priority": 31,
+            "phrase": "Castles queenside"
+          },
+          {
+            "id": "connects_rooks",
+            "priority": 201,
+            "phrase": ""
+          }
+        ],
+        "pv": [
+          "e1c1",
+          "e6e5",
+          "c4d5",
+          "e5e4",
+          "d3e4",
+          "c6d5"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "d2c2",
+        "san": "Qc2",
+        "quality": "best",
+        "sf_cp_white_after": -501,
+        "sf_mate": null,
+        "our_cp_white_after": -375,
+        "sf_delta_stm": -22,
+        "our_delta_stm": 21,
+        "wr_loss": 0.98,
+        "motifs": [],
+        "pv": [
+          "d2c2",
+          "e6e5",
+          "c4d5",
+          "e5d4",
+          "f3d4",
+          "c6d5"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "c4c5",
+        "san": "c5",
+        "quality": "excellent",
+        "sf_cp_white_after": -502,
+        "sf_mate": null,
+        "our_cp_white_after": -274,
+        "sf_delta_stm": -23,
+        "our_delta_stm": 122,
+        "wr_loss": 1.03,
+        "motifs": [
+          {
+            "id": "threatens",
+            "priority": 26,
+            "phrase": "Wins the bishop"
+          },
+          {
+            "id": "opens_diagonal_for",
+            "priority": 65,
+            "phrase": "Opens a diagonal for the bishop"
+          },
+          {
+            "id": "restricts",
+            "priority": 84,
+            "phrase": "Restricts the opponent's pieces"
+          }
+        ],
+        "pv": [
+          "c4c5",
+          "d6c7",
+          "g2g4",
+          "e6e5",
+          "g4g5",
+          "f6h5"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "c4d5",
+        "san": "cxd5",
+        "quality": "excellent",
+        "sf_cp_white_after": -515,
+        "sf_mate": null,
+        "our_cp_white_after": -291,
+        "sf_delta_stm": -36,
+        "our_delta_stm": 105,
+        "wr_loss": 1.58,
+        "motifs": [
+          {
+            "id": "piece_trade",
+            "priority": 18,
+            "phrase": "Trades pawns"
+          },
+          {
+            "id": "opens_diagonal_for",
+            "priority": 65,
+            "phrase": "Opens a diagonal for the bishop"
+          },
+          {
+            "id": "pawn_break",
+            "priority": 90,
+            "phrase": "Pawn break"
+          }
+        ],
+        "pv": [
+          "c4d5",
+          "e6d5",
+          "e1c1",
+          "b7b5",
+          "f3e5",
+          "d6e5"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 6,
+    "note": "KID structure, central tension",
+    "kind": "middlegame",
+    "fen": "r1bq1rk1/pp1n1pbp/2pp1np1/4p3/P1PPP3/2N2N2/1P2BPPP/R1BQ1RK1 w - - 0 9",
+    "stm": "w",
+    "sf_eval_white": 48,
+    "our_eval_white": 28,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 23,
+        "eg": 21
+      },
+      "mobility": {
+        "mg": 33,
+        "eg": 68
+      },
+      "pawns": {
+        "mg": -28,
+        "eg": -3
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Slight edge for White",
+    "themes": [
+      "piece_activity",
+      "space_advantage"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "a4a5",
+        "san": "a5",
+        "quality": "best",
+        "sf_cp_white_after": 48,
+        "sf_mate": null,
+        "our_cp_white_after": 50,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 22,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "a4a5",
+          "e5d4",
+          "f3d4",
+          "d7c5",
+          "f2f3",
+          "f6h5"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d4d5",
+        "san": "d5",
+        "quality": "best",
+        "sf_cp_white_after": 41,
+        "sf_mate": null,
+        "our_cp_white_after": 70,
+        "sf_delta_stm": -7,
+        "our_delta_stm": 42,
+        "wr_loss": 0.64,
+        "motifs": [
+          {
+            "id": "pawn_lever",
+            "priority": 91,
+            "phrase": "Creates a pawn lever"
+          }
+        ],
+        "pv": [
+          "d4d5",
+          "a7a5",
+          "d1c2",
+          "d8e7",
+          "g1h1",
+          "d7b8"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "c1e3",
+        "san": "Be3",
+        "quality": "excellent",
+        "sf_cp_white_after": 33,
+        "sf_mate": null,
+        "our_cp_white_after": 66,
+        "sf_delta_stm": -15,
+        "our_delta_stm": 38,
+        "wr_loss": 1.37,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "c1e3",
+          "e5d4",
+          "f3d4",
+          "d8e7",
+          "e3g5",
+          "d7c5"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "f1e1",
+        "san": "Re1",
+        "quality": "excellent",
+        "sf_cp_white_after": 26,
+        "sf_mate": null,
+        "our_cp_white_after": 44,
+        "sf_delta_stm": -22,
+        "our_delta_stm": 16,
+        "wr_loss": 2.02,
+        "motifs": [],
+        "pv": [
+          "f1e1",
+          "a7a5",
+          "d1c2",
+          "f8e8",
+          "d4d5",
+          "d7c5"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "d4e5",
+        "san": "dxe5",
+        "quality": "excellent",
+        "sf_cp_white_after": 22,
+        "sf_mate": null,
+        "our_cp_white_after": 144,
+        "sf_delta_stm": -26,
+        "our_delta_stm": 116,
+        "wr_loss": 2.38,
+        "motifs": [
+          {
+            "id": "piece_trade",
+            "priority": 18,
+            "phrase": "Trades pawns"
+          },
+          {
+            "id": "fork",
+            "priority": 5,
+            "phrase": "Forks pawn and knight"
+          },
+          {
+            "id": "removes_defender",
+            "priority": 13,
+            "phrase": "Removes the defender of the pawn"
+          },
+          {
+            "id": "opens_file_for",
+            "priority": 64,
+            "phrase": "Opens the d-file for the queen"
+          },
+          {
+            "id": "backward_pawn_them",
+            "priority": 47,
+            "phrase": "Saddles the opponent with a backward f-pawn"
+          },
+          {
+            "id": "pawn_break",
+            "priority": 90,
+            "phrase": "Pawn break"
+          }
+        ],
+        "pv": [
+          "d4e5",
+          "d6e5",
+          "b2b4",
+          "a7a5",
+          "b4b5",
+          "f8e8"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 7,
+    "note": "Variation of QGD",
+    "kind": "middlegame",
+    "fen": "r2q1rk1/pp1n1ppp/2pbpn2/3p4/2PP4/2NBPN2/PP1Q1PPP/R3K2R w KQ - 0 9",
+    "stm": "w",
+    "sf_eval_white": 2,
+    "our_eval_white": -45,
+    "our_phase": 22,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": -43,
+        "eg": 23
+      },
+      "mobility": {
+        "mg": -2,
+        "eg": 15
+      },
+      "pawns": {
+        "mg": -8,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Slight edge for Black",
+    "themes": [
+      "opposite_color_bishops",
+      "light_complex",
+      "dark_complex"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "e1g1",
+        "san": "O-O",
+        "quality": "best",
+        "sf_cp_white_after": 2,
+        "sf_mate": null,
+        "our_cp_white_after": 10,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 55,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "castles_kingside",
+            "priority": 30,
+            "phrase": "Castles kingside"
+          },
+          {
+            "id": "connects_rooks",
+            "priority": 201,
+            "phrase": ""
+          }
+        ],
+        "pv": [
+          "e1g1",
+          "d8e7",
+          "a1d1",
+          "a8d8",
+          "d2c2",
+          "g7g6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "a1d1",
+        "san": "Rd1",
+        "quality": "best",
+        "sf_cp_white_after": -2,
+        "sf_mate": null,
+        "our_cp_white_after": -18,
+        "sf_delta_stm": -4,
+        "our_delta_stm": 27,
+        "wr_loss": 0.37,
+        "motifs": [
+          {
+            "id": "loses_castling",
+            "priority": 88,
+            "phrase": "Forfeits queenside castling"
+          }
+        ],
+        "pv": [
+          "a1d1",
+          "a7a6",
+          "e1g1",
+          "d5c4",
+          "d3c4",
+          "c6c5"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "g2g3",
+        "san": "g3",
+        "quality": "best",
+        "sf_cp_white_after": -3,
+        "sf_mate": null,
+        "our_cp_white_after": -38,
+        "sf_delta_stm": -5,
+        "our_delta_stm": 7,
+        "wr_loss": 0.46,
+        "motifs": [],
+        "pv": [
+          "g2g3",
+          "a7a6",
+          "e1g1",
+          "d5c4",
+          "d3c4",
+          "c6c5"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "a2a3",
+        "san": "a3",
+        "quality": "best",
+        "sf_cp_white_after": -7,
+        "sf_mate": null,
+        "our_cp_white_after": -26,
+        "sf_delta_stm": -9,
+        "our_delta_stm": 19,
+        "wr_loss": 0.83,
+        "motifs": [],
+        "pv": [
+          "a2a3",
+          "f8e8",
+          "a1d1",
+          "d8e7",
+          "e1g1",
+          "a8d8"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "d2c2",
+        "san": "Qc2",
+        "quality": "excellent",
+        "sf_cp_white_after": -12,
+        "sf_mate": null,
+        "our_cp_white_after": -26,
+        "sf_delta_stm": -14,
+        "our_delta_stm": 19,
+        "wr_loss": 1.29,
+        "motifs": [],
+        "pv": [
+          "d2c2",
+          "d5c4",
+          "d3c4",
+          "a7a6",
+          "e1g1",
+          "c6c5"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 8,
+    "note": "Benoni-style, locked centre",
+    "kind": "middlegame",
+    "fen": "r1bq1rk1/pp2ppbp/n2p1np1/2pP4/2P5/2N2NP1/PP2PPBP/R1BQ1RK1 w - - 0 9",
+    "stm": "w",
+    "sf_eval_white": 101,
+    "our_eval_white": 85,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 66,
+        "eg": 26
+      },
+      "mobility": {
+        "mg": 10,
+        "eg": 16
+      },
+      "pawns": {
+        "mg": 9,
+        "eg": 10
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White better (+0.9)",
+    "themes": [],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "e2e4",
+        "san": "e4",
+        "quality": "best",
+        "sf_cp_white_after": 101,
+        "sf_mate": null,
+        "our_cp_white_after": 118,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 33,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Stakes a claim in the center"
+          }
+        ],
+        "pv": [
+          "e2e4",
+          "a8b8",
+          "f1e1",
+          "a6c7",
+          "a2a4",
+          "a7a6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "c1f4",
+        "san": "Bf4",
+        "quality": "best",
+        "sf_cp_white_after": 97,
+        "sf_mate": null,
+        "our_cp_white_after": 123,
+        "sf_delta_stm": -4,
+        "our_delta_stm": 38,
+        "wr_loss": 0.36,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "c1f4",
+          "c8f5",
+          "f3h4",
+          "f5d7",
+          "e2e4",
+          "a8b8"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "f1e1",
+        "san": "Re1",
+        "quality": "best",
+        "sf_cp_white_after": 95,
+        "sf_mate": null,
+        "our_cp_white_after": 90,
+        "sf_delta_stm": -6,
+        "our_delta_stm": 5,
+        "wr_loss": 0.53,
+        "motifs": [],
+        "pv": [
+          "f1e1",
+          "a6c7",
+          "a2a4",
+          "e7e5",
+          "d5e6",
+          "c7e6"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "c1g5",
+        "san": "Bg5",
+        "quality": "best",
+        "sf_cp_white_after": 90,
+        "sf_mate": null,
+        "our_cp_white_after": 150,
+        "sf_delta_stm": -11,
+        "our_delta_stm": 65,
+        "wr_loss": 0.98,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "c1g5",
+          "a6c7",
+          "e2e4",
+          "f6d7",
+          "a2a4",
+          "a7a6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "h2h3",
+        "san": "h3",
+        "quality": "excellent",
+        "sf_cp_white_after": 88,
+        "sf_mate": null,
+        "our_cp_white_after": 84,
+        "sf_delta_stm": -13,
+        "our_delta_stm": -1,
+        "wr_loss": 1.16,
+        "motifs": [],
+        "pv": [
+          "h2h3",
+          "a6c7",
+          "e2e4",
+          "a8b8",
+          "c1f4",
+          "f6e8"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 9,
+    "note": "Royal fork: Nc2 forks K + R",
+    "kind": "tactic",
+    "fen": "2k5/8/8/8/8/n7/8/R3K3 b - - 0 1",
+    "stm": "b",
+    "sf_eval_white": 1,
+    "our_eval_white": 289,
+    "our_phase": 3,
+    "our_breakdown": {
+      "material": {
+        "mg": 140,
+        "eg": 231
+      },
+      "psqt": {
+        "mg": 24,
+        "eg": 8
+      },
+      "mobility": {
+        "mg": -1,
+        "eg": 29
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 70,
+        "eg": 30
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White winning (+2.9)",
+    "themes": [
+      "material_edge",
+      "king_safety",
+      "open_file_control",
+      "hanging_pieces",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "a3c2",
+        "san": "Nc2+",
+        "quality": "best",
+        "sf_cp_white_after": 1,
+        "sf_mate": null,
+        "our_cp_white_after": 227,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 62,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "check",
+            "priority": 29,
+            "phrase": "Gives check"
+          },
+          {
+            "id": "fork",
+            "priority": 5,
+            "phrase": "Forks rook and king"
+          },
+          {
+            "id": "knight_invasion",
+            "priority": 50,
+            "phrase": "Knight invades c2"
+          },
+          {
+            "id": "activates",
+            "priority": 86,
+            "phrase": "Activates the knight for the endgame"
+          }
+        ],
+        "pv": [
+          "a3c2",
+          "e1f2",
+          "c2a1",
+          "f2f3",
+          "c8c7",
+          "f3f4"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "a3b5",
+        "san": "Nb5",
+        "quality": "excellent",
+        "sf_cp_white_after": 35,
+        "sf_mate": null,
+        "our_cp_white_after": 254,
+        "sf_delta_stm": -34,
+        "our_delta_stm": 35,
+        "wr_loss": 3.13,
+        "motifs": [
+          {
+            "id": "activates",
+            "priority": 86,
+            "phrase": "Activates the knight for the endgame"
+          }
+        ],
+        "pv": [
+          "a3b5",
+          "e1f2",
+          "b5c7",
+          "a1h1",
+          "c7d5",
+          "h1h7"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "a3c4",
+        "san": "Nc4",
+        "quality": "blunder",
+        "sf_cp_white_after": 430,
+        "sf_mate": null,
+        "our_cp_white_after": 223,
+        "sf_delta_stm": -429,
+        "our_delta_stm": 66,
+        "wr_loss": 32.88,
+        "motifs": [
+          {
+            "id": "attacks_king",
+            "priority": 72,
+            "phrase": "Knight on c4 now attacks d2 (next to the king)"
+          },
+          {
+            "id": "knight_invasion",
+            "priority": 50,
+            "phrase": "Knight invades c4"
+          },
+          {
+            "id": "activates",
+            "priority": 86,
+            "phrase": "Activates the knight for the endgame"
+          }
+        ],
+        "pv": [
+          "a3c4",
+          "a1c1",
+          "c8d7",
+          "c1c4",
+          "d7d6",
+          "c4b4"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "c8c7",
+        "san": "Kc7",
+        "quality": "blunder",
+        "sf_cp_white_after": 432,
+        "sf_mate": null,
+        "our_cp_white_after": 270,
+        "sf_delta_stm": -431,
+        "our_delta_stm": 19,
+        "wr_loss": 32.98,
+        "motifs": [],
+        "pv": [
+          "c8c7",
+          "a1a3",
+          "c7d6",
+          "a3a5",
+          "d6e6",
+          "a5h5"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "c8d7",
+        "san": "Kd7",
+        "quality": "blunder",
+        "sf_cp_white_after": 448,
+        "sf_mate": null,
+        "our_cp_white_after": 269,
+        "sf_delta_stm": -447,
+        "our_delta_stm": 20,
+        "wr_loss": 33.79,
+        "motifs": [],
+        "pv": [
+          "c8d7",
+          "a1a3",
+          "d7e6",
+          "a3a5",
+          "e6d6",
+          "e1d1"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 10,
+    "note": "Re3 absolute pin on Ne5",
+    "kind": "tactic",
+    "fen": "4k3/8/8/4n3/8/8/8/4R2K w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 492,
+    "our_eval_white": 265,
+    "our_phase": 3,
+    "our_breakdown": {
+      "material": {
+        "mg": 140,
+        "eg": 231
+      },
+      "psqt": {
+        "mg": -6,
+        "eg": -36
+      },
+      "mobility": {
+        "mg": -1,
+        "eg": 49
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 70,
+        "eg": 30
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White winning (+2.7)",
+    "themes": [
+      "material_edge",
+      "king_safety",
+      "open_file_control",
+      "hanging_pieces",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "h1g2",
+        "san": "Kg2",
+        "quality": "best",
+        "sf_cp_white_after": 492,
+        "sf_mate": null,
+        "our_cp_white_after": 301,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 36,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "h1g2",
+          "e8d7",
+          "e1e5",
+          "d7d6",
+          "e5a5",
+          "d6c7"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "h1h2",
+        "san": "Kh2",
+        "quality": "best",
+        "sf_cp_white_after": 491,
+        "sf_mate": null,
+        "our_cp_white_after": 291,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 26,
+        "wr_loss": 0.04,
+        "motifs": [],
+        "pv": [
+          "h1h2",
+          "e8d7",
+          "e1e5",
+          "d7d6",
+          "e5a5",
+          "d6c7"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "e1e3",
+        "san": "Re3",
+        "quality": "best",
+        "sf_cp_white_after": 491,
+        "sf_mate": null,
+        "our_cp_white_after": 265,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 0,
+        "wr_loss": 0.04,
+        "motifs": [
+          {
+            "id": "pin",
+            "priority": 7,
+            "phrase": "Pins the knight to the king"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open e-file"
+          }
+        ],
+        "pv": [
+          "e1e3",
+          "e8d7",
+          "e3e5",
+          "d7c6",
+          "h1g2",
+          "c6d6"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "e1e5",
+        "san": "Rxe5+",
+        "quality": "best",
+        "sf_cp_white_after": 491,
+        "sf_mate": null,
+        "our_cp_white_after": 563,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 298,
+        "wr_loss": 0.04,
+        "motifs": [
+          {
+            "id": "exchange_sacrifice",
+            "priority": 14,
+            "phrase": "Gives the exchange for the knight"
+          },
+          {
+            "id": "check",
+            "priority": 29,
+            "phrase": "Gives check"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open e-file"
+          },
+          {
+            "id": "decisive_combination",
+            "priority": 4,
+            "phrase": "Decisive combination — winning material and pressing on"
+          }
+        ],
+        "pv": [
+          "e1e5",
+          "e8d7",
+          "h1g2",
+          "d7d6",
+          "e5a5",
+          "d6c7"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "h1g1",
+        "san": "Kg1",
+        "quality": "excellent",
+        "sf_cp_white_after": 431,
+        "sf_mate": null,
+        "our_cp_white_after": 277,
+        "sf_delta_stm": -61,
+        "our_delta_stm": 12,
+        "wr_loss": 2.94,
+        "motifs": [],
+        "pv": [
+          "h1g1",
+          "e8d7",
+          "e1e5",
+          "d7d6",
+          "e5g5",
+          "d6e6"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 11,
+    "note": "Re1 pins Q to K (pin not skewer)",
+    "kind": "tactic",
+    "fen": "4k3/4q3/8/8/8/8/8/R5K1 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": -228,
+    "our_eval_white": -456,
+    "our_phase": 6,
+    "our_breakdown": {
+      "material": {
+        "mg": -548,
+        "eg": -424
+      },
+      "psqt": {
+        "mg": -11,
+        "eg": 11
+      },
+      "mobility": {
+        "mg": -22,
+        "eg": -2
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Black winning (+4.6)",
+    "themes": [
+      "material_edge",
+      "piece_activity",
+      "open_file_control",
+      "open_file_control",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "a1f1",
+        "san": "Rf1",
+        "quality": "best",
+        "sf_cp_white_after": -228,
+        "sf_mate": null,
+        "our_cp_white_after": -453,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 3,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "eyes_king_zone",
+            "priority": 71,
+            "phrase": "Eyes the king's file"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open f-file"
+          }
+        ],
+        "pv": [
+          "a1f1",
+          "e8d7",
+          "f1f2",
+          "e7g5",
+          "g1f1",
+          "d7e6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "a1d1",
+        "san": "Rd1",
+        "quality": "best",
+        "sf_cp_white_after": -233,
+        "sf_mate": null,
+        "our_cp_white_after": -441,
+        "sf_delta_stm": -5,
+        "our_delta_stm": 15,
+        "wr_loss": 0.39,
+        "motifs": [
+          {
+            "id": "eyes_king_zone",
+            "priority": 71,
+            "phrase": "Eyes the king's file"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open d-file"
+          }
+        ],
+        "pv": [
+          "a1d1",
+          "e8f7",
+          "d1f1",
+          "f7g6",
+          "f1f2",
+          "g6g5"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "a1a8",
+        "san": "Ra8+",
+        "quality": "best",
+        "sf_cp_white_after": -233,
+        "sf_mate": null,
+        "our_cp_white_after": -428,
+        "sf_delta_stm": -5,
+        "our_delta_stm": 28,
+        "wr_loss": 0.39,
+        "motifs": [
+          {
+            "id": "check",
+            "priority": 29,
+            "phrase": "Gives check"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open a-file"
+          }
+        ],
+        "pv": [
+          "a1a8",
+          "e8f7",
+          "a8a2",
+          "e7e1",
+          "g1g2",
+          "e1e4"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "a1a2",
+        "san": "Ra2",
+        "quality": "excellent",
+        "sf_cp_white_after": -250,
+        "sf_mate": null,
+        "our_cp_white_after": -457,
+        "sf_delta_stm": -22,
+        "our_delta_stm": -1,
+        "wr_loss": 1.68,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open a-file"
+          }
+        ],
+        "pv": [
+          "a1a2",
+          "e7e1",
+          "g1h2",
+          "e8e7",
+          "a2g2",
+          "e7e6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "g1g2",
+        "san": "Kg2",
+        "quality": "inaccuracy",
+        "sf_cp_white_after": -507,
+        "sf_mate": null,
+        "our_cp_white_after": -443,
+        "sf_delta_stm": -279,
+        "our_delta_stm": 13,
+        "wr_loss": 16.77,
+        "motifs": [],
+        "pv": [
+          "g1g2",
+          "e7g7",
+          "g2f3",
+          "g7c3",
+          "f3e4",
+          "c3a1"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 12,
+    "note": "Nf6 discovered check from Rd1",
+    "kind": "tactic",
+    "fen": "3k4/8/8/3N4/8/8/8/3RK3 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 518,
+    "our_eval_white": 867,
+    "our_phase": 3,
+    "our_breakdown": {
+      "material": {
+        "mg": 814,
+        "eg": 793
+      },
+      "psqt": {
+        "mg": 132,
+        "eg": 4
+      },
+      "mobility": {
+        "mg": 16,
+        "eg": 57
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White clearly winning (+8.7)",
+    "themes": [
+      "material_edge",
+      "king_safety",
+      "piece_activity",
+      "open_file_control",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "d1b1",
+        "san": "Rb1",
+        "quality": "best",
+        "sf_cp_white_after": 518,
+        "sf_mate": null,
+        "our_cp_white_after": 883,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 16,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open b-file"
+          }
+        ],
+        "pv": [
+          "d1b1",
+          "d8e8",
+          "b1b7",
+          "e8f8",
+          "d5b4",
+          "f8g8"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d1a1",
+        "san": "Ra1",
+        "quality": "best",
+        "sf_cp_white_after": 503,
+        "sf_mate": null,
+        "our_cp_white_after": 872,
+        "sf_delta_stm": -15,
+        "our_delta_stm": 5,
+        "wr_loss": 0.63,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open a-file"
+          }
+        ],
+        "pv": [
+          "d1a1",
+          "d8e8",
+          "a1a7",
+          "e8f8",
+          "a7h7",
+          "f8g8"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "e1d2",
+        "san": "Kd2",
+        "quality": "best",
+        "sf_cp_white_after": 499,
+        "sf_mate": null,
+        "our_cp_white_after": 897,
+        "sf_delta_stm": -19,
+        "our_delta_stm": 30,
+        "wr_loss": 0.81,
+        "motifs": [],
+        "pv": [
+          "e1d2",
+          "d8e8",
+          "d1f1",
+          "e8d7",
+          "d2d1",
+          "d7e6"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "e1f1",
+        "san": "Kf1",
+        "quality": "excellent",
+        "sf_cp_white_after": 492,
+        "sf_mate": null,
+        "our_cp_white_after": 878,
+        "sf_delta_stm": -26,
+        "our_delta_stm": 11,
+        "wr_loss": 1.12,
+        "motifs": [],
+        "pv": [
+          "e1f1",
+          "d8d7",
+          "d5f6",
+          "d7e7",
+          "f6d7",
+          "e7e6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "d1c1",
+        "san": "Rc1",
+        "quality": "excellent",
+        "sf_cp_white_after": 487,
+        "sf_mate": null,
+        "our_cp_white_after": 942,
+        "sf_delta_stm": -31,
+        "our_delta_stm": 75,
+        "wr_loss": 1.34,
+        "motifs": [
+          {
+            "id": "eyes_king_zone",
+            "priority": 71,
+            "phrase": "Eyes the king's file"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open c-file"
+          }
+        ],
+        "pv": [
+          "d1c1",
+          "d8d7",
+          "d5c3",
+          "d7c6",
+          "c1b1",
+          "c6c7"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 13,
+    "note": "Symmetrical-ish, look for tactics",
+    "kind": "tactic",
+    "fen": "r3k2r/ppp2ppp/2n2n2/3pp3/1b1P4/2N1PN2/PPPB1PPP/R2QKB1R w KQkq - 0 1",
+    "stm": "w",
+    "sf_eval_white": 882,
+    "our_eval_white": 1321,
+    "our_phase": 19,
+    "our_breakdown": {
+      "material": {
+        "mg": 1390,
+        "eg": 1233
+      },
+      "psqt": {
+        "mg": -21,
+        "eg": -62
+      },
+      "mobility": {
+        "mg": -19,
+        "eg": -37
+      },
+      "pawns": {
+        "mg": 20,
+        "eg": 3
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": -35,
+        "eg": -30
+      },
+      "imbalance": {
+        "mg": 30,
+        "eg": 50
+      }
+    },
+    "verdict": "White clearly winning (+13.2)",
+    "themes": [
+      "material_edge",
+      "bishop_pair",
+      "light_complex",
+      "hanging_pieces",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "f1b5",
+        "san": "Bb5",
+        "quality": "best",
+        "sf_cp_white_after": 882,
+        "sf_mate": null,
+        "our_cp_white_after": 1383,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 62,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "pin",
+            "priority": 7,
+            "phrase": "Pins the knight to the king"
+          },
+          {
+            "id": "prepares_castling_kingside",
+            "priority": 80,
+            "phrase": "Clears the way for kingside castle"
+          },
+          {
+            "id": "restricts",
+            "priority": 84,
+            "phrase": "Restricts the opponent's pieces"
+          },
+          {
+            "id": "activates",
+            "priority": 86,
+            "phrase": "Activates the bishop"
+          }
+        ],
+        "pv": [
+          "f1b5",
+          "e8c8",
+          "b5c6",
+          "e5d4",
+          "f3d4",
+          "b7c6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "a2a3",
+        "san": "a3",
+        "quality": "best",
+        "sf_cp_white_after": 871,
+        "sf_mate": null,
+        "our_cp_white_after": 1339,
+        "sf_delta_stm": -11,
+        "our_delta_stm": 18,
+        "wr_loss": 0.15,
+        "motifs": [
+          {
+            "id": "threatens",
+            "priority": 26,
+            "phrase": "Threatens the bishop"
+          }
+        ],
+        "pv": [
+          "a2a3",
+          "b4c3",
+          "d2c3",
+          "e8c8",
+          "d1b1",
+          "e5d4"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "f3e5",
+        "san": "Nxe5",
+        "quality": "best",
+        "sf_cp_white_after": 860,
+        "sf_mate": null,
+        "our_cp_white_after": 1459,
+        "sf_delta_stm": -22,
+        "our_delta_stm": 138,
+        "wr_loss": 0.3,
+        "motifs": [
+          {
+            "id": "capture",
+            "priority": 19,
+            "phrase": "Captures the pawn"
+          },
+          {
+            "id": "attacks_king",
+            "priority": 72,
+            "phrase": "Knight on e5 attacks 2 squares around the king (d7, f7)"
+          },
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Centralizes the piece"
+          },
+          {
+            "id": "activates",
+            "priority": 86,
+            "phrase": "Activates the knight"
+          }
+        ],
+        "pv": [
+          "f3e5",
+          "c6e5",
+          "d4e5",
+          "d5d4",
+          "e5f6",
+          "e8c8"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "d4e5",
+        "san": "dxe5",
+        "quality": "best",
+        "sf_cp_white_after": 859,
+        "sf_mate": null,
+        "our_cp_white_after": 1374,
+        "sf_delta_stm": -23,
+        "our_delta_stm": 53,
+        "wr_loss": 0.32,
+        "motifs": [
+          {
+            "id": "simplifies",
+            "priority": 15,
+            "phrase": "Simplifies by trading pawns"
+          },
+          {
+            "id": "threatens",
+            "priority": 26,
+            "phrase": "Threatens the knight"
+          },
+          {
+            "id": "removes_defender",
+            "priority": 13,
+            "phrase": "Removes the defender of the knight"
+          },
+          {
+            "id": "pawn_break",
+            "priority": 90,
+            "phrase": "Pawn break"
+          }
+        ],
+        "pv": [
+          "d4e5",
+          "d5d4",
+          "f1d3",
+          "d4c3",
+          "b2c3",
+          "f6g4"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "h2h4",
+        "san": "h4",
+        "quality": "excellent",
+        "sf_cp_white_after": 797,
+        "sf_mate": null,
+        "our_cp_white_after": 1331,
+        "sf_delta_stm": -85,
+        "our_delta_stm": 10,
+        "wr_loss": 1.31,
+        "motifs": [],
+        "pv": [
+          "h2h4",
+          "e8c8",
+          "a2a3",
+          "e5d4",
+          "a3b4",
+          "d4c3"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 14,
+    "note": "Kingside attack with sac chances",
+    "kind": "tactic",
+    "fen": "r4rk1/pp3ppp/2p1bn2/q2pP3/3P4/P1NB1Q2/1PP2PPP/R3R1K1 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 596,
+    "our_eval_white": 162,
+    "our_phase": 20,
+    "our_breakdown": {
+      "material": {
+        "mg": 82,
+        "eg": 94
+      },
+      "psqt": {
+        "mg": 32,
+        "eg": 45
+      },
+      "mobility": {
+        "mg": 25,
+        "eg": 48
+      },
+      "pawns": {
+        "mg": 17,
+        "eg": 10
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White better (+1.6)",
+    "themes": [
+      "material_edge",
+      "piece_activity",
+      "dark_complex",
+      "hanging_pieces",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "e5f6",
+        "san": "exf6",
+        "quality": "best",
+        "sf_cp_white_after": 596,
+        "sf_mate": null,
+        "our_cp_white_after": 487,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 325,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "capture",
+            "priority": 19,
+            "phrase": "Captures the knight"
+          },
+          {
+            "id": "opens_file_for",
+            "priority": 64,
+            "phrase": "Opens the e-file for the rook"
+          },
+          {
+            "id": "pawn_break",
+            "priority": 90,
+            "phrase": "Pawn break"
+          },
+          {
+            "id": "restricts",
+            "priority": 84,
+            "phrase": "Restricts the opponent's pieces"
+          }
+        ],
+        "pv": [
+          "e5f6",
+          "g7g6",
+          "f3f4",
+          "a5d8",
+          "g1h1",
+          "a7a5"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "b2b4",
+        "san": "b4",
+        "quality": "excellent",
+        "sf_cp_white_after": 557,
+        "sf_mate": null,
+        "our_cp_white_after": 232,
+        "sf_delta_stm": -39,
+        "our_delta_stm": 70,
+        "wr_loss": 1.37,
+        "motifs": [
+          {
+            "id": "threatens",
+            "priority": 26,
+            "phrase": "Wins the queen"
+          }
+        ],
+        "pv": [
+          "b2b4",
+          "a5d8",
+          "e5f6",
+          "f8e8",
+          "a1b1",
+          "b7b5"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "c3e2",
+        "san": "Ne2",
+        "quality": "inaccuracy",
+        "sf_cp_white_after": 260,
+        "sf_mate": null,
+        "our_cp_white_after": 121,
+        "sf_delta_stm": -336,
+        "our_delta_stm": -41,
+        "wr_loss": 17.72,
+        "motifs": [],
+        "pv": [
+          "c3e2",
+          "f6e8",
+          "c2c3",
+          "g7g6",
+          "e2f4",
+          "e8g7"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "a3a4",
+        "san": "a4",
+        "quality": "inaccuracy",
+        "sf_cp_white_after": 252,
+        "sf_mate": null,
+        "our_cp_white_after": 159,
+        "sf_delta_stm": -344,
+        "our_delta_stm": -3,
+        "wr_loss": 18.31,
+        "motifs": [],
+        "pv": [
+          "a3a4",
+          "f6e8",
+          "c3e2",
+          "g7g6",
+          "c2c3",
+          "e8g7"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "f3e3",
+        "san": "Qe3",
+        "quality": "inaccuracy",
+        "sf_cp_white_after": 241,
+        "sf_mate": null,
+        "our_cp_white_after": 145,
+        "sf_delta_stm": -355,
+        "our_delta_stm": -17,
+        "wr_loss": 19.14,
+        "motifs": [],
+        "pv": [
+          "f3e3",
+          "f6g4",
+          "e3g3",
+          "g4h6",
+          "c3e2",
+          "a5b6"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 15,
+    "note": "Q+R for Black, Q+B+R for White, threats",
+    "kind": "tactic",
+    "fen": "2r3k1/p4ppp/1p1q4/3p4/3Q4/2P3P1/P4PBP/3R2K1 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 547,
+    "our_eval_white": 266,
+    "our_phase": 13,
+    "our_breakdown": {
+      "material": {
+        "mg": 283,
+        "eg": 203
+      },
+      "psqt": {
+        "mg": 24,
+        "eg": 13
+      },
+      "mobility": {
+        "mg": 15,
+        "eg": 5
+      },
+      "pawns": {
+        "mg": -5,
+        "eg": -15
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White winning (+2.7)",
+    "themes": [
+      "material_edge",
+      "iqp",
+      "light_complex",
+      "dark_complex",
+      "long_diagonal",
+      "long_diagonal",
+      "hanging_pieces",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "g2d5",
+        "san": "Bxd5",
+        "quality": "best",
+        "sf_cp_white_after": 547,
+        "sf_mate": null,
+        "our_cp_white_after": 381,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 115,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "capture",
+            "priority": 19,
+            "phrase": "Captures the pawn"
+          },
+          {
+            "id": "pin",
+            "priority": 7,
+            "phrase": "Pins the pawn to the king"
+          },
+          {
+            "id": "outpost",
+            "priority": 60,
+            "phrase": "Establishes an outpost on d5"
+          },
+          {
+            "id": "activates",
+            "priority": 86,
+            "phrase": "Activates the bishop"
+          }
+        ],
+        "pv": [
+          "g2d5",
+          "d6f6",
+          "d5b7",
+          "c8e8",
+          "d4f6",
+          "g7f6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "h2h3",
+        "san": "h3",
+        "quality": "best",
+        "sf_cp_white_after": 546,
+        "sf_mate": null,
+        "our_cp_white_after": 267,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 1,
+        "wr_loss": 0.04,
+        "motifs": [
+          {
+            "id": "luft",
+            "priority": 73,
+            "phrase": "Creates luft for the king"
+          }
+        ],
+        "pv": [
+          "h2h3",
+          "d6f6",
+          "g2d5",
+          "f6d4",
+          "c3d4",
+          "a7a5"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "c3c4",
+        "san": "c4",
+        "quality": "best",
+        "sf_cp_white_after": 546,
+        "sf_mate": null,
+        "our_cp_white_after": 270,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 4,
+        "wr_loss": 0.04,
+        "motifs": [
+          {
+            "id": "opens_diagonal_for",
+            "priority": 65,
+            "phrase": "Opens a diagonal for the queen"
+          },
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Stakes a claim in the center"
+          },
+          {
+            "id": "pawn_lever",
+            "priority": 91,
+            "phrase": "Creates a pawn lever"
+          }
+        ],
+        "pv": [
+          "c3c4",
+          "d6e7",
+          "c4d5",
+          "e7e2",
+          "d1f1",
+          "c8c2"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "h2h4",
+        "san": "h4",
+        "quality": "best",
+        "sf_cp_white_after": 529,
+        "sf_mate": null,
+        "our_cp_white_after": 273,
+        "sf_delta_stm": -18,
+        "our_delta_stm": 7,
+        "wr_loss": 0.71,
+        "motifs": [],
+        "pv": [
+          "h2h4",
+          "h7h5",
+          "g2d5",
+          "d6e7",
+          "d5b3",
+          "g7g6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "g2f3",
+        "san": "Bf3",
+        "quality": "excellent",
+        "sf_cp_white_after": 517,
+        "sf_mate": null,
+        "our_cp_white_after": 273,
+        "sf_delta_stm": -30,
+        "our_delta_stm": 7,
+        "wr_loss": 1.2,
+        "motifs": [],
+        "pv": [
+          "g2f3",
+          "a7a5",
+          "d4d5",
+          "d6d5",
+          "d1d5",
+          "g8f8"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 16,
+    "note": "Rook ending: who is active?",
+    "kind": "tactic",
+    "fen": "6k1/5p1p/6p1/8/3R4/2r5/5PPP/6K1 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 45,
+    "our_eval_white": -5,
+    "our_phase": 4,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": -22,
+        "eg": 0
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": -8,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Roughly equal",
+    "themes": [
+      "space_advantage",
+      "light_complex",
+      "open_file_control",
+      "open_file_control"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "h2h3",
+        "san": "h3",
+        "quality": "best",
+        "sf_cp_white_after": 45,
+        "sf_mate": null,
+        "our_cp_white_after": -2,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 3,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "luft",
+            "priority": 73,
+            "phrase": "Creates luft for the king"
+          }
+        ],
+        "pv": [
+          "h2h3",
+          "g8g7",
+          "d4b4",
+          "c3c1",
+          "g1h2",
+          "c1d1"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "g2g3",
+        "san": "g3",
+        "quality": "excellent",
+        "sf_cp_white_after": 10,
+        "sf_mate": null,
+        "our_cp_white_after": -5,
+        "sf_delta_stm": -35,
+        "our_delta_stm": 0,
+        "wr_loss": 3.21,
+        "motifs": [
+          {
+            "id": "luft",
+            "priority": 73,
+            "phrase": "Creates luft for the king"
+          },
+          {
+            "id": "color_complex_self",
+            "priority": 45,
+            "phrase": "Dark squares become permanently weak"
+          }
+        ],
+        "pv": [
+          "g2g3",
+          "c3b3",
+          "d4d2",
+          "g8g7",
+          "g1g2",
+          "h7h5"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "g2g4",
+        "san": "g4",
+        "quality": "excellent",
+        "sf_cp_white_after": 9,
+        "sf_mate": null,
+        "our_cp_white_after": -11,
+        "sf_delta_stm": -36,
+        "our_delta_stm": -6,
+        "wr_loss": 3.3,
+        "motifs": [],
+        "pv": [
+          "g2g4",
+          "c3b3",
+          "d4d2",
+          "b3b4",
+          "f2f3",
+          "b4b5"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "d4d1",
+        "san": "Rd1",
+        "quality": "good",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -8,
+        "sf_delta_stm": -45,
+        "our_delta_stm": -3,
+        "wr_loss": 4.13,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open d-file"
+          }
+        ],
+        "pv": [
+          "d4d1",
+          "c3b3",
+          "g1f1",
+          "b3b4",
+          "d1d2",
+          "b4b7"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "d4d8",
+        "san": "Rd8+",
+        "quality": "good",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 11,
+        "sf_delta_stm": -45,
+        "our_delta_stm": 16,
+        "wr_loss": 4.13,
+        "motifs": [
+          {
+            "id": "check",
+            "priority": 29,
+            "phrase": "Gives check"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open d-file"
+          }
+        ],
+        "pv": [
+          "d4d8",
+          "g8g7",
+          "d8d1",
+          "c3b3",
+          "g2g3",
+          "b3b2"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 17,
+    "note": "Saavedra (1895) — White wins",
+    "kind": "endgame",
+    "fen": "8/8/1KP5/3r4/8/8/8/k7 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 221,
+    "our_eval_white": -150,
+    "our_phase": 2,
+    "our_breakdown": {
+      "material": {
+        "mg": -395,
+        "eg": -418
+      },
+      "psqt": {
+        "mg": 116,
+        "eg": 172
+      },
+      "mobility": {
+        "mg": -23,
+        "eg": -68
+      },
+      "pawns": {
+        "mg": 163,
+        "eg": 162
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Black better (+1.5)",
+    "themes": [
+      "material_edge",
+      "king_safety",
+      "piece_activity",
+      "open_file_control",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "c6c7",
+        "san": "c7",
+        "quality": "best",
+        "sf_cp_white_after": 221,
+        "sf_mate": null,
+        "our_cp_white_after": 4,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 154,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "passed_pawn",
+            "priority": 92,
+            "phrase": "Creates a passed pawn"
+          }
+        ],
+        "pv": [
+          "c6c7",
+          "d5d2",
+          "c7c8q",
+          "a1b1",
+          "c8f5",
+          "d2c2"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "b6b7",
+        "san": "Kb7",
+        "quality": "inaccuracy",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -153,
+        "sf_delta_stm": -221,
+        "our_delta_stm": -3,
+        "wr_loss": 19.29,
+        "motifs": [],
+        "pv": [
+          "b6b7",
+          "d5c5",
+          "c6c7",
+          "a1b1",
+          "c7c8q",
+          "c5c8"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "b6c7",
+        "san": "Kc7",
+        "quality": "inaccuracy",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -157,
+        "sf_delta_stm": -221,
+        "our_delta_stm": -7,
+        "wr_loss": 19.29,
+        "motifs": [],
+        "pv": [
+          "b6c7",
+          "d5d2",
+          "c7b6",
+          "a1b2",
+          "c6c7",
+          "d2c2"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "b6a6",
+        "san": "Ka6",
+        "quality": "inaccuracy",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -160,
+        "sf_delta_stm": -221,
+        "our_delta_stm": -10,
+        "wr_loss": 19.29,
+        "motifs": [],
+        "pv": [
+          "b6a6",
+          "d5c5",
+          "a6b7",
+          "c5c6",
+          "b7c6",
+          "a1b2"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "b6a7",
+        "san": "Ka7",
+        "quality": "inaccuracy",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -177,
+        "sf_delta_stm": -221,
+        "our_delta_stm": -27,
+        "wr_loss": 19.29,
+        "motifs": [],
+        "pv": [
+          "b6a7",
+          "d5c5",
+          "a7b6",
+          "c5c6",
+          "b6c6",
+          "a1b2"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 18,
+    "note": "Réti (1921) — King double duty",
+    "kind": "endgame",
+    "fen": "7K/8/k1P5/7p/8/8/8/8 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": -5,
+    "our_eval_white": 224,
+    "our_phase": 0,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 78,
+        "eg": 88
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 153,
+        "eg": 136
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White winning (+2.2)",
+    "themes": [
+      "square_of_pawn",
+      "square_of_pawn",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "h8g7",
+        "san": "Kg7",
+        "quality": "best",
+        "sf_cp_white_after": -5,
+        "sf_mate": null,
+        "our_cp_white_after": 264,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 40,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "h8g7",
+          "h5h4",
+          "g7f6",
+          "a6b6",
+          "f6e5",
+          "b6c6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "c6c7",
+        "san": "c7",
+        "quality": "blunder",
+        "sf_cp_white_after": -498,
+        "sf_mate": null,
+        "our_cp_white_after": 380,
+        "sf_delta_stm": -493,
+        "our_delta_stm": 156,
+        "wr_loss": 35.76,
+        "motifs": [
+          {
+            "id": "passed_pawn",
+            "priority": 92,
+            "phrase": "Creates a passed pawn"
+          }
+        ],
+        "pv": [
+          "c6c7",
+          "a6b7",
+          "h8g7",
+          "b7c7",
+          "g7g6",
+          "h5h4"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "h8h7",
+        "san": "Kh7",
+        "quality": "blunder",
+        "sf_cp_white_after": -501,
+        "sf_mate": null,
+        "our_cp_white_after": 252,
+        "sf_delta_stm": -496,
+        "our_delta_stm": 28,
+        "wr_loss": 35.89,
+        "motifs": [],
+        "pv": [
+          "h8h7",
+          "h5h4",
+          "h7h6",
+          "h4h3",
+          "h6g5",
+          "h3h2"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "h8g8",
+        "san": "Kg8",
+        "quality": "blunder",
+        "sf_cp_white_after": -515,
+        "sf_mate": null,
+        "our_cp_white_after": 245,
+        "sf_delta_stm": -510,
+        "our_delta_stm": 21,
+        "wr_loss": 36.49,
+        "motifs": [],
+        "pv": [
+          "h8g8",
+          "h5h4",
+          "g8g7",
+          "a6b6",
+          "c6c7",
+          "b6c7"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 19,
+    "note": "Lucena — bridge wins",
+    "kind": "endgame",
+    "fen": "1K6/1P6/k7/8/8/8/r7/2R5 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 890,
+    "our_eval_white": 492,
+    "our_phase": 4,
+    "our_breakdown": {
+      "material": {
+        "mg": 82,
+        "eg": 94
+      },
+      "psqt": {
+        "mg": 145,
+        "eg": 149
+      },
+      "mobility": {
+        "mg": 8,
+        "eg": 2
+      },
+      "pawns": {
+        "mg": 271,
+        "eg": 245
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White winning (+4.9)",
+    "themes": [
+      "material_edge",
+      "open_file_control",
+      "open_file_control",
+      "seventh_rank",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "b8c7",
+        "san": "Kc7",
+        "quality": "best",
+        "sf_cp_white_after": 890,
+        "sf_mate": null,
+        "our_cp_white_after": 523,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 31,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "b8c7",
+          "a2h2",
+          "c1a1",
+          "a6b5",
+          "b7b8q",
+          "b5c4"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "b8c8",
+        "san": "Kc8",
+        "quality": "excellent",
+        "sf_cp_white_after": 713,
+        "sf_mate": null,
+        "our_cp_white_after": 504,
+        "sf_delta_stm": -177,
+        "our_delta_stm": 12,
+        "wr_loss": 3.12,
+        "motifs": [],
+        "pv": [
+          "b8c8",
+          "a2a5",
+          "c8c7",
+          "a5h5",
+          "c1a1",
+          "a6b5"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "c1c3",
+        "san": "Rc3",
+        "quality": "neutral",
+        "sf_cp_white_after": 488,
+        "sf_mate": null,
+        "our_cp_white_after": 483,
+        "sf_delta_stm": -402,
+        "our_delta_stm": -9,
+        "wr_loss": 10.59,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open c-file"
+          }
+        ],
+        "pv": [
+          "c1c3",
+          "a2b2",
+          "c3c7",
+          "b2h2",
+          "b8a8",
+          "h2h8"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "c1g1",
+        "san": "Rg1",
+        "quality": "neutral",
+        "sf_cp_white_after": 486,
+        "sf_mate": null,
+        "our_cp_white_after": 487,
+        "sf_delta_stm": -404,
+        "our_delta_stm": -5,
+        "wr_loss": 10.68,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open g-file"
+          }
+        ],
+        "pv": [
+          "c1g1",
+          "a2h2",
+          "g1g6",
+          "a6b5",
+          "g6d6",
+          "h2h7"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "c1c6",
+        "san": "Rc6+",
+        "quality": "neutral",
+        "sf_cp_white_after": 480,
+        "sf_mate": null,
+        "our_cp_white_after": 525,
+        "sf_delta_stm": -410,
+        "our_delta_stm": 33,
+        "wr_loss": 10.95,
+        "motifs": [
+          {
+            "id": "check",
+            "priority": 29,
+            "phrase": "Gives check"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open c-file"
+          }
+        ],
+        "pv": [
+          "c1c6",
+          "a6b5",
+          "c6d6",
+          "b5a5",
+          "d6d1",
+          "a5a6"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 20,
+    "note": "Philidor — drawing technique",
+    "kind": "endgame",
+    "fen": "8/8/8/3k4/8/r7/4P3/4K2R w K - 0 1",
+    "stm": "w",
+    "sf_eval_white": 0,
+    "our_eval_white": 38,
+    "our_phase": 4,
+    "our_breakdown": {
+      "material": {
+        "mg": 82,
+        "eg": 94
+      },
+      "psqt": {
+        "mg": 11,
+        "eg": -66
+      },
+      "mobility": {
+        "mg": -12,
+        "eg": -12
+      },
+      "pawns": {
+        "mg": 5,
+        "eg": 13
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Slight edge for White",
+    "themes": [
+      "material_edge",
+      "king_safety",
+      "space_advantage",
+      "open_file_control",
+      "open_file_control"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "e1f2",
+        "san": "Kf2",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 73,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 35,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "e1f2",
+          "d5e5",
+          "h1h4",
+          "e5f6",
+          "e2e3",
+          "f6e6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "h1h5",
+        "san": "Rh5+",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 66,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 28,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "check",
+            "priority": 29,
+            "phrase": "Gives check"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open h-file"
+          }
+        ],
+        "pv": [
+          "h1h5",
+          "d5e6",
+          "e1f2",
+          "e6f7",
+          "h5h4",
+          "f7f6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "h1h8",
+        "san": "Rh8",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 82,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 44,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open h-file"
+          }
+        ],
+        "pv": [
+          "h1h8",
+          "d5e5",
+          "e1f2",
+          "e5f6",
+          "h8h4",
+          "f6g5"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "h1h6",
+        "san": "Rh6",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 71,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 33,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "eyes_king_zone",
+            "priority": 71,
+            "phrase": "Eyes the king's file"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open h-file"
+          }
+        ],
+        "pv": [
+          "h1h6",
+          "d5e5",
+          "e1f2",
+          "e5f4",
+          "h6h4",
+          "f4g5"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "h1h2",
+        "san": "Rh2",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 45,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 7,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open h-file"
+          }
+        ],
+        "pv": [
+          "h1h2",
+          "a3a8",
+          "h2h4",
+          "d5e5",
+          "e2e3",
+          "e5f6"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 21,
+    "note": "KP vs K: opposition",
+    "kind": "endgame",
+    "fen": "8/8/8/3k4/3P4/3K4/8/8 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 35,
+    "our_eval_white": 121,
+    "our_phase": 0,
+    "our_breakdown": {
+      "material": {
+        "mg": 82,
+        "eg": 94
+      },
+      "psqt": {
+        "mg": 5,
+        "eg": -10
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 10,
+        "eg": 26
+      },
+      "king_safety": {
+        "mg": 11,
+        "eg": 11
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White better (+1.2)",
+    "themes": [
+      "opposition",
+      "material_edge",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "d3c3",
+        "san": "Kc3",
+        "quality": "best",
+        "sf_cp_white_after": 35,
+        "sf_mate": null,
+        "our_cp_white_after": 111,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -10,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3c3",
+          "d5e6",
+          "c3c4",
+          "e6d6",
+          "d4d5",
+          "d6d7"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d3e3",
+        "san": "Ke3",
+        "quality": "excellent",
+        "sf_cp_white_after": 17,
+        "sf_mate": null,
+        "our_cp_white_after": 123,
+        "sf_delta_stm": -18,
+        "our_delta_stm": 2,
+        "wr_loss": 1.65,
+        "motifs": [],
+        "pv": [
+          "d3e3",
+          "d5c6",
+          "e3e2",
+          "c6d6",
+          "e2d3",
+          "d6d7"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "d3d2",
+        "san": "Kd2",
+        "quality": "excellent",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 102,
+        "sf_delta_stm": -35,
+        "our_delta_stm": -19,
+        "wr_loss": 3.22,
+        "motifs": [],
+        "pv": [
+          "d3d2",
+          "d5d4",
+          "d2c2",
+          "d4c4",
+          "c2d2"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "d3e2",
+        "san": "Ke2",
+        "quality": "excellent",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 103,
+        "sf_delta_stm": -35,
+        "our_delta_stm": -18,
+        "wr_loss": 3.22,
+        "motifs": [],
+        "pv": [
+          "d3e2",
+          "d5d4",
+          "e2f2",
+          "d4e4",
+          "f2e2",
+          "e4f4"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "d3c2",
+        "san": "Kc2",
+        "quality": "excellent",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 93,
+        "sf_delta_stm": -35,
+        "our_delta_stm": -28,
+        "wr_loss": 3.22,
+        "motifs": [],
+        "pv": [
+          "d3c2",
+          "d5d4",
+          "c2d2",
+          "d4e4",
+          "d2c2"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 22,
+    "note": "KP vs K: square of pawn",
+    "kind": "endgame",
+    "fen": "8/4k3/8/8/8/3K4/4P3/8 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 522,
+    "our_eval_white": 127,
+    "our_phase": 0,
+    "our_breakdown": {
+      "material": {
+        "mg": 82,
+        "eg": 94
+      },
+      "psqt": {
+        "mg": -18,
+        "eg": 20
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 5,
+        "eg": 13
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White better (+1.3)",
+    "themes": [
+      "material_edge",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "d3e4",
+        "san": "Ke4",
+        "quality": "best",
+        "sf_cp_white_after": 522,
+        "sf_mate": null,
+        "our_cp_white_after": 133,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 6,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3e4",
+          "e7e6",
+          "e2e3",
+          "e6f6",
+          "e4d5",
+          "f6e7"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d3d4",
+        "san": "Kd4",
+        "quality": "best",
+        "sf_cp_white_after": 522,
+        "sf_mate": null,
+        "our_cp_white_after": 130,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 3,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3d4",
+          "e7d6",
+          "e2e3",
+          "d6e6",
+          "d4e4",
+          "e6f6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "d3c4",
+        "san": "Kc4",
+        "quality": "best",
+        "sf_cp_white_after": 522,
+        "sf_mate": null,
+        "our_cp_white_after": 127,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 0,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3c4",
+          "e7e6",
+          "c4d4",
+          "e6d6",
+          "e2e3",
+          "d6e6"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "d3e3",
+        "san": "Ke3",
+        "quality": "best",
+        "sf_cp_white_after": 522,
+        "sf_mate": null,
+        "our_cp_white_after": 129,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 2,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3e3",
+          "e7d7",
+          "e3e4",
+          "d7e6",
+          "e2e3",
+          "e6f6"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "d3c3",
+        "san": "Kc3",
+        "quality": "best",
+        "sf_cp_white_after": 522,
+        "sf_mate": null,
+        "our_cp_white_after": 117,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -10,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3c3",
+          "e7d7",
+          "c3d4",
+          "d7d6",
+          "e2e3",
+          "d6e6"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 23,
+    "note": "Symmetrical pawn endgame",
+    "kind": "endgame",
+    "fen": "4k3/p7/8/8/8/8/P7/4K3 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 1,
+    "our_eval_white": 0,
+    "our_phase": 0,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": 0,
+        "eg": 0
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Roughly equal",
+    "themes": [],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "e1d2",
+        "san": "Kd2",
+        "quality": "best",
+        "sf_cp_white_after": 1,
+        "sf_mate": null,
+        "our_cp_white_after": 41,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 41,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "e1d2",
+          "e8d7",
+          "d2c3",
+          "d7c6",
+          "c3c4",
+          "a7a6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "e1e2",
+        "san": "Ke2",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 42,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 42,
+        "wr_loss": 0.09,
+        "motifs": [],
+        "pv": [
+          "e1e2",
+          "e8d7",
+          "e2d3",
+          "a7a5",
+          "a2a4",
+          "d7c6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "a2a4",
+        "san": "a4",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 0,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 0,
+        "wr_loss": 0.09,
+        "motifs": [],
+        "pv": [
+          "a2a4",
+          "e8d7",
+          "e1d2",
+          "d7c6",
+          "a4a5",
+          "c6b5"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "e1d1",
+        "san": "Kd1",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 17,
+        "sf_delta_stm": -1,
+        "our_delta_stm": 17,
+        "wr_loss": 0.09,
+        "motifs": [],
+        "pv": [
+          "e1d1",
+          "e8d7",
+          "d1c2",
+          "d7c6",
+          "a2a4",
+          "c6d5"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "a2a3",
+        "san": "a3",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -9,
+        "sf_delta_stm": -1,
+        "our_delta_stm": -9,
+        "wr_loss": 0.09,
+        "motifs": [],
+        "pv": [
+          "a2a3",
+          "e8d7",
+          "e1d2",
+          "d7c6",
+          "a3a4",
+          "a7a5"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 24,
+    "note": "White advanced K + P, easy win",
+    "kind": "endgame",
+    "fen": "8/5k2/8/4PK2/8/8/8/8 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 0,
+    "our_eval_white": 189,
+    "our_phase": 0,
+    "our_breakdown": {
+      "material": {
+        "mg": 82,
+        "eg": 94
+      },
+      "psqt": {
+        "mg": 14,
+        "eg": 27
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 57,
+        "eg": 57
+      },
+      "king_safety": {
+        "mg": 11,
+        "eg": 11
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White better (+1.9)",
+    "themes": [
+      "opposition",
+      "material_edge",
+      "space_advantage",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "f5g5",
+        "san": "Kg5",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 182,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -7,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "f5g5",
+          "f7e7",
+          "g5g6",
+          "e7e6",
+          "g6g7",
+          "e6e7"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "f5f4",
+        "san": "Kf4",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 168,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -21,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "f5f4",
+          "f7e6",
+          "f4e4",
+          "e6e7",
+          "e4f5",
+          "e7f7"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "e5e6",
+        "san": "e6+",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 352,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 163,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "check",
+            "priority": 29,
+            "phrase": "Gives check"
+          },
+          {
+            "id": "passed_pawn",
+            "priority": 92,
+            "phrase": "Creates a passed pawn"
+          }
+        ],
+        "pv": [
+          "e5e6",
+          "f7e7",
+          "f5e5",
+          "e7e8",
+          "e5d6",
+          "e8d8"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "f5g4",
+        "san": "Kg4",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 154,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -35,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "f5g4",
+          "f7e6",
+          "g4f4",
+          "e6e7",
+          "f4e4",
+          "e7e8"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "f5e4",
+        "san": "Ke4",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": 172,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -17,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "f5e4",
+          "f7e7",
+          "e4f5",
+          "e7f7",
+          "f5g5",
+          "f7e7"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 25,
+    "note": "Trébuchet: zugzwang loses",
+    "kind": "endgame",
+    "fen": "8/8/8/p7/P7/k7/8/K7 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": -22,
+    "our_eval_white": -63,
+    "our_phase": 0,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": -6,
+        "eg": -63
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Slight edge for Black",
+    "themes": [
+      "opposition",
+      "hanging_pieces",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "a1b1",
+        "san": "Kb1",
+        "quality": "best",
+        "sf_cp_white_after": -22,
+        "sf_mate": null,
+        "our_cp_white_after": -44,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 19,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "a1b1",
+          "a3a4",
+          "b1a2",
+          "a4b4",
+          "a2b2",
+          "a5a4"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 26,
+    "note": "Sharp middlegame: Q on a2",
+    "kind": "middlegame",
+    "fen": "r3r1k1/pp3pbp/2p3p1/3pP3/3P2P1/2P2N2/q2N1PB1/R2QR1K1 b - - 0 18",
+    "stm": "b",
+    "sf_eval_white": 613,
+    "our_eval_white": 601,
+    "our_phase": 20,
+    "our_breakdown": {
+      "material": {
+        "mg": 510,
+        "eg": 374
+      },
+      "psqt": {
+        "mg": 106,
+        "eg": -46
+      },
+      "mobility": {
+        "mg": -27,
+        "eg": -47
+      },
+      "pawns": {
+        "mg": 3,
+        "eg": -15
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 70,
+        "eg": 30
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White clearly winning (+6.0)",
+    "themes": [
+      "material_edge",
+      "opposite_color_bishops",
+      "light_complex",
+      "dark_complex",
+      "hanging_pieces",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "a2b2",
+        "san": "Qb2",
+        "quality": "best",
+        "sf_cp_white_after": 613,
+        "sf_mate": null,
+        "our_cp_white_after": 561,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 40,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "attacks_pawn",
+            "priority": 70,
+            "phrase": "Threatens the backward c-pawn"
+          }
+        ],
+        "pv": [
+          "a2b2",
+          "a1b1",
+          "b2c3",
+          "d1a4",
+          "b7b5",
+          "a4a2"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "a2a1",
+        "san": "Qxa1",
+        "quality": "excellent",
+        "sf_cp_white_after": 699,
+        "sf_mate": null,
+        "our_cp_white_after": 107,
+        "sf_delta_stm": -86,
+        "our_delta_stm": 494,
+        "wr_loss": 2.39,
+        "motifs": [
+          {
+            "id": "capture",
+            "priority": 19,
+            "phrase": "Captures the rook"
+          },
+          {
+            "id": "removes_defender",
+            "priority": 13,
+            "phrase": "Removes the defender of the pawn"
+          },
+          {
+            "id": "hangs",
+            "priority": 103,
+            "phrase": "Loses material in the exchange"
+          }
+        ],
+        "pv": [
+          "a2a1",
+          "d1a1",
+          "a7a5",
+          "g1h1",
+          "a5a4",
+          "a1a3"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "g7e5",
+        "san": "Bxe5",
+        "quality": "excellent",
+        "sf_cp_white_after": 770,
+        "sf_mate": null,
+        "our_cp_white_after": 451,
+        "sf_delta_stm": -157,
+        "our_delta_stm": 150,
+        "wr_loss": 3.93,
+        "motifs": [
+          {
+            "id": "capture",
+            "priority": 19,
+            "phrase": "Captures the pawn"
+          },
+          {
+            "id": "hangs",
+            "priority": 103,
+            "phrase": "Loses material in the exchange"
+          },
+          {
+            "id": "back_rank_mate_threat",
+            "priority": 9,
+            "phrase": "Threatens back-rank mate"
+          },
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Centralizes the piece"
+          },
+          {
+            "id": "hanging_pawns_them",
+            "priority": 42,
+            "phrase": "Saddles the opponent with hanging cd pawns"
+          },
+          {
+            "id": "activates",
+            "priority": 86,
+            "phrase": "Activates the bishop"
+          }
+        ],
+        "pv": [
+          "g7e5",
+          "d4e5",
+          "a2b2",
+          "c3c4",
+          "a8d8",
+          "a1b1"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "e8e5",
+        "san": "Rxe5",
+        "quality": "excellent",
+        "sf_cp_white_after": 771,
+        "sf_mate": null,
+        "our_cp_white_after": 464,
+        "sf_delta_stm": -158,
+        "our_delta_stm": 137,
+        "wr_loss": 3.95,
+        "motifs": [
+          {
+            "id": "capture",
+            "priority": 19,
+            "phrase": "Captures the pawn"
+          },
+          {
+            "id": "hangs",
+            "priority": 103,
+            "phrase": "Loses material in the exchange"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open e-file"
+          },
+          {
+            "id": "hanging_pawns_them",
+            "priority": 42,
+            "phrase": "Saddles the opponent with hanging cd pawns"
+          }
+        ],
+        "pv": [
+          "e8e5",
+          "f3e5",
+          "a2b2",
+          "d2f3",
+          "b2c3",
+          "e1e3"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "a2a6",
+        "san": "Qa6",
+        "quality": "good",
+        "sf_cp_white_after": 789,
+        "sf_mate": null,
+        "our_cp_white_after": 587,
+        "sf_delta_stm": -176,
+        "our_delta_stm": 14,
+        "wr_loss": 4.28,
+        "motifs": [
+          {
+            "id": "hangs",
+            "priority": 103,
+            "phrase": "Hangs the queen"
+          }
+        ],
+        "pv": [
+          "a2a6",
+          "a1a6",
+          "b7a6",
+          "d2b3",
+          "g7f8",
+          "b3c1"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 27,
+    "note": "Late middlegame, balanced material",
+    "kind": "middlegame",
+    "fen": "2r1nrk1/pp3ppp/3p1q2/3Pp3/2P1P3/PP1B1Q1P/3N2P1/2R2RK1 w - - 0 22",
+    "stm": "w",
+    "sf_eval_white": 567,
+    "our_eval_white": 455,
+    "our_phase": 19,
+    "our_breakdown": {
+      "material": {
+        "mg": 365,
+        "eg": 297
+      },
+      "psqt": {
+        "mg": 47,
+        "eg": 17
+      },
+      "mobility": {
+        "mg": 26,
+        "eg": 54
+      },
+      "pawns": {
+        "mg": 37,
+        "eg": 13
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White winning (+4.6)",
+    "themes": [
+      "material_edge",
+      "king_safety",
+      "light_complex",
+      "dark_complex",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "f3f6",
+        "san": "Qxf6",
+        "quality": "best",
+        "sf_cp_white_after": 567,
+        "sf_mate": null,
+        "our_cp_white_after": 1528,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 1073,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "simplifies",
+            "priority": 15,
+            "phrase": "Trades queens to simplify the win"
+          },
+          {
+            "id": "pin",
+            "priority": 7,
+            "phrase": "Pins the pawn to the rook"
+          },
+          {
+            "id": "back_rank_mate_threat",
+            "priority": 9,
+            "phrase": "Threatens back-rank mate"
+          },
+          {
+            "id": "restricts",
+            "priority": 84,
+            "phrase": "Restricts the opponent's pieces"
+          },
+          {
+            "id": "decisive_combination",
+            "priority": 4,
+            "phrase": "Decisive combination — winning material and pressing on"
+          }
+        ],
+        "pv": [
+          "f3f6",
+          "e8f6",
+          "f1e1",
+          "f6h5",
+          "d3e2",
+          "h5g3"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "f3e3",
+        "san": "Qe3",
+        "quality": "excellent",
+        "sf_cp_white_after": 532,
+        "sf_mate": null,
+        "our_cp_white_after": 522,
+        "sf_delta_stm": -35,
+        "our_delta_stm": 67,
+        "wr_loss": 1.33,
+        "motifs": [
+          {
+            "id": "creates_threat",
+            "priority": 25,
+            "phrase": "Creates a threat on the queen"
+          },
+          {
+            "id": "opens_file_for",
+            "priority": 64,
+            "phrase": "Opens the f-file for the rook"
+          },
+          {
+            "id": "attacks_pawn",
+            "priority": 70,
+            "phrase": "Threatens the a-pawn"
+          }
+        ],
+        "pv": [
+          "f3e3",
+          "f6d8",
+          "b3b4",
+          "f7f5",
+          "e4f5",
+          "e8f6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "f1e1",
+        "san": "Rfe1",
+        "quality": "excellent",
+        "sf_cp_white_after": 514,
+        "sf_mate": null,
+        "our_cp_white_after": 484,
+        "sf_delta_stm": -53,
+        "our_delta_stm": 29,
+        "wr_loss": 2.07,
+        "motifs": [
+          {
+            "id": "opens_file_for",
+            "priority": 64,
+            "phrase": "Opens the f-file for the queen"
+          }
+        ],
+        "pv": [
+          "f1e1",
+          "f6d8",
+          "f3e3",
+          "f7f5",
+          "e4f5",
+          "e8f6"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "c1e1",
+        "san": "Rce1",
+        "quality": "excellent",
+        "sf_cp_white_after": 513,
+        "sf_mate": null,
+        "our_cp_white_after": 454,
+        "sf_delta_stm": -54,
+        "our_delta_stm": -1,
+        "wr_loss": 2.11,
+        "motifs": [],
+        "pv": [
+          "c1e1",
+          "f6g5",
+          "f3e3",
+          "g5e3",
+          "e1e3",
+          "f7f5"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "c1c2",
+        "san": "Rc2",
+        "quality": "excellent",
+        "sf_cp_white_after": 504,
+        "sf_mate": null,
+        "our_cp_white_after": 423,
+        "sf_delta_stm": -63,
+        "our_delta_stm": -32,
+        "wr_loss": 2.49,
+        "motifs": [],
+        "pv": [
+          "c1c2",
+          "f6h6",
+          "b3b4",
+          "f7f5",
+          "e4f5",
+          "a7a5"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 28,
+    "note": "Rook + pawns ending, exchange-up",
+    "kind": "endgame",
+    "fen": "6k1/5ppp/8/8/8/8/5PPP/2R3K1 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 0,
+    "our_eval_white": 573,
+    "our_phase": 2,
+    "our_breakdown": {
+      "material": {
+        "mg": 477,
+        "eg": 512
+      },
+      "psqt": {
+        "mg": 1,
+        "eg": 3
+      },
+      "mobility": {
+        "mg": 18,
+        "eg": 66
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White clearly winning (+5.7)",
+    "themes": [
+      "material_edge",
+      "piece_activity",
+      "open_file_control",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "c1c8",
+        "san": "Rc8#",
+        "quality": "best",
+        "sf_cp_white_after": null,
+        "sf_mate": 1,
+        "our_cp_white_after": 591,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 18,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "checkmate",
+            "priority": 0,
+            "phrase": "Delivers checkmate"
+          },
+          {
+            "id": "back_rank_mate",
+            "priority": 0,
+            "phrase": "Delivers back-rank mate"
+          },
+          {
+            "id": "check",
+            "priority": 29,
+            "phrase": "Gives check"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open c-file"
+          }
+        ],
+        "pv": [
+          "c1c8"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "c1b1",
+        "san": "Rb1",
+        "quality": "best",
+        "sf_cp_white_after": 642,
+        "sf_mate": null,
+        "our_cp_white_after": 571,
+        "sf_delta_stm": 642,
+        "our_delta_stm": -2,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open b-file"
+          }
+        ],
+        "pv": [
+          "c1b1",
+          "f7f5",
+          "g1f1",
+          "g8f7",
+          "f1e2",
+          "f7e6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "c1a1",
+        "san": "Ra1",
+        "quality": "best",
+        "sf_cp_white_after": 641,
+        "sf_mate": null,
+        "our_cp_white_after": 561,
+        "sf_delta_stm": 641,
+        "our_delta_stm": -12,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open a-file"
+          }
+        ],
+        "pv": [
+          "c1a1",
+          "g7g5",
+          "a1a8",
+          "g8g7",
+          "g2g3",
+          "f7f6"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "g1f1",
+        "san": "Kf1",
+        "quality": "best",
+        "sf_cp_white_after": 634,
+        "sf_mate": null,
+        "our_cp_white_after": 578,
+        "sf_delta_stm": 634,
+        "our_delta_stm": 5,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "g1f1",
+          "g7g5",
+          "g2g3",
+          "f7f5",
+          "f1e2",
+          "g5g4"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "f2f3",
+        "san": "f3",
+        "quality": "best",
+        "sf_cp_white_after": 629,
+        "sf_mate": null,
+        "our_cp_white_after": 568,
+        "sf_delta_stm": 629,
+        "our_delta_stm": -5,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "f2f3",
+          "f7f6",
+          "g1f1",
+          "g8f7",
+          "g2g4",
+          "f6f5"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 29,
+    "note": "Black to move with mate-in-1; SF score in STM-POV",
+    "kind": "tactic",
+    "fen": "8/8/8/8/4k3/8/4q3/4K3 b - - 0 1",
+    "stm": "b",
+    "error": "evaluate_fen: illegal: illegal position: opposite check"
+  },
+  {
+    "idx": 30,
+    "note": "Defended pieces in line — should NOT call it skewer",
+    "kind": "tactic",
+    "fen": "4k3/4r3/4r3/4r3/8/8/8/4R2K w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 0,
+    "our_eval_white": -1110,
+    "our_phase": 8,
+    "our_breakdown": {
+      "material": {
+        "mg": -954,
+        "eg": -1024
+      },
+      "psqt": {
+        "mg": 11,
+        "eg": 1
+      },
+      "mobility": {
+        "mg": -15,
+        "eg": -98
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": -70,
+        "eg": -30
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Black clearly winning (-11.1)",
+    "themes": [
+      "material_edge",
+      "king_safety",
+      "piece_activity",
+      "hanging_pieces",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "e1e5",
+        "san": "Rxe5",
+        "quality": "best",
+        "sf_cp_white_after": null,
+        "sf_mate": -7,
+        "our_cp_white_after": -558,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 552,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "trades_when_behind",
+            "priority": 87,
+            "phrase": "Trades into a worse ending"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open e-file"
+          },
+          {
+            "id": "restricts",
+            "priority": 84,
+            "phrase": "Restricts the opponent's pieces"
+          }
+        ],
+        "pv": [
+          "e1e5",
+          "e6e5",
+          "h1g2",
+          "e5g5",
+          "g2f3",
+          "g5f5"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "e1e4",
+        "san": "Re4",
+        "quality": "best",
+        "sf_cp_white_after": null,
+        "sf_mate": -5,
+        "our_cp_white_after": -1098,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 12,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "hangs",
+            "priority": 103,
+            "phrase": "Hangs the rook"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open e-file"
+          },
+          {
+            "id": "prophylaxis",
+            "priority": 89,
+            "phrase": "Prophylactic move, restricting the opponent"
+          }
+        ],
+        "pv": [
+          "e1e4",
+          "e5e4",
+          "h1g2",
+          "e4e3",
+          "g2f1",
+          "e7g7"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "e1e3",
+        "san": "Re3",
+        "quality": "best",
+        "sf_cp_white_after": null,
+        "sf_mate": -4,
+        "our_cp_white_after": -1104,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 6,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "hangs",
+            "priority": 103,
+            "phrase": "Hangs the rook"
+          },
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open e-file"
+          }
+        ],
+        "pv": [
+          "e1e3",
+          "e5e3",
+          "h1g2",
+          "e7g7",
+          "g2f2",
+          "e3c3"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "h1h2",
+        "san": "Kh2",
+        "quality": "best",
+        "sf_cp_white_after": null,
+        "sf_mate": -3,
+        "our_cp_white_after": -1091,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 19,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "h1h2",
+          "e7g7",
+          "e1e5",
+          "e6e5",
+          "h2h1",
+          "e5h5"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "e1c1",
+        "san": "Rc1",
+        "quality": "best",
+        "sf_cp_white_after": null,
+        "sf_mate": -3,
+        "our_cp_white_after": -1060,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 50,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "open_file",
+            "priority": 54,
+            "phrase": "Posts the rook on the open c-file"
+          }
+        ],
+        "pv": [
+          "e1c1",
+          "e5h5",
+          "h1g2",
+          "e7g7",
+          "g2f3",
+          "h5f5"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 31,
+    "note": "Italian: Greek-gift territory",
+    "kind": "tactic",
+    "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+    "stm": "w",
+    "sf_eval_white": 19,
+    "our_eval_white": -19,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": -8,
+        "eg": -21
+      },
+      "mobility": {
+        "mg": -11,
+        "eg": -10
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Roughly equal",
+    "themes": [
+      "hanging_pieces"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "f3g5",
+        "san": "Ng5",
+        "quality": "best",
+        "sf_cp_white_after": 19,
+        "sf_mate": null,
+        "our_cp_white_after": 31,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 50,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "defends",
+            "priority": 83,
+            "phrase": "Defends the pawn"
+          },
+          {
+            "id": "attacks_king",
+            "priority": 72,
+            "phrase": "Knight on g5 now attacks f7 (next to the king)"
+          },
+          {
+            "id": "attacks_pawn",
+            "priority": 70,
+            "phrase": "Attacks the f-pawn"
+          }
+        ],
+        "pv": [
+          "f3g5",
+          "d7d5",
+          "e4d5",
+          "c6a5",
+          "c4b5",
+          "c7c6"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d2d3",
+        "san": "d3",
+        "quality": "best",
+        "sf_cp_white_after": 17,
+        "sf_mate": null,
+        "our_cp_white_after": 63,
+        "sf_delta_stm": -2,
+        "our_delta_stm": 82,
+        "wr_loss": 0.18,
+        "motifs": [
+          {
+            "id": "defends",
+            "priority": 83,
+            "phrase": "Defends the pawn"
+          }
+        ],
+        "pv": [
+          "d2d3",
+          "f8c5",
+          "e1g1",
+          "d7d6",
+          "a2a4",
+          "h7h6"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "d2d4",
+        "san": "d4",
+        "quality": "best",
+        "sf_cp_white_after": 11,
+        "sf_mate": null,
+        "our_cp_white_after": 67,
+        "sf_delta_stm": -8,
+        "our_delta_stm": 86,
+        "wr_loss": 0.74,
+        "motifs": [
+          {
+            "id": "centralizes",
+            "priority": 82,
+            "phrase": "Stakes a claim in the center"
+          },
+          {
+            "id": "pawn_lever",
+            "priority": 91,
+            "phrase": "Creates a pawn lever"
+          }
+        ],
+        "pv": [
+          "d2d4",
+          "e5d4",
+          "e4e5",
+          "d7d5",
+          "c4b5",
+          "f6e4"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "b1c3",
+        "san": "Nc3",
+        "quality": "excellent",
+        "sf_cp_white_after": 4,
+        "sf_mate": null,
+        "our_cp_white_after": 36,
+        "sf_delta_stm": -15,
+        "our_delta_stm": 55,
+        "wr_loss": 1.38,
+        "motifs": [
+          {
+            "id": "defends",
+            "priority": 83,
+            "phrase": "Defends the pawn"
+          },
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "b1c3",
+          "f6e4",
+          "c3e4",
+          "d7d5",
+          "c4d3",
+          "d5e4"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "d1e2",
+        "san": "Qe2",
+        "quality": "excellent",
+        "sf_cp_white_after": -7,
+        "sf_mate": null,
+        "our_cp_white_after": -10,
+        "sf_delta_stm": -26,
+        "our_delta_stm": 9,
+        "wr_loss": 2.39,
+        "motifs": [
+          {
+            "id": "defends",
+            "priority": 83,
+            "phrase": "Defends the pawn"
+          }
+        ],
+        "pv": [
+          "d1e2",
+          "f8c5",
+          "d2d3",
+          "e8g8",
+          "e1g1",
+          "c6d4"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 32,
+    "note": "Pin-pretzel; sac chances",
+    "kind": "tactic",
+    "fen": "r1bq1rk1/pppp1ppp/2n5/4p3/1bB1P3/5N2/PPPP1PPP/RNBQK2R w KQ - 0 5",
+    "stm": "w",
+    "sf_eval_white": 475,
+    "our_eval_white": 254,
+    "our_phase": 23,
+    "our_breakdown": {
+      "material": {
+        "mg": 337,
+        "eg": 281
+      },
+      "psqt": {
+        "mg": -57,
+        "eg": -60
+      },
+      "mobility": {
+        "mg": -23,
+        "eg": -34
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "White winning (+2.5)",
+    "themes": [
+      "material_edge",
+      "king_safety",
+      "leading_factor"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "c2c3",
+        "san": "c3",
+        "quality": "best",
+        "sf_cp_white_after": 475,
+        "sf_mate": null,
+        "our_cp_white_after": 275,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 21,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "threatens",
+            "priority": 26,
+            "phrase": "Threatens the bishop"
+          }
+        ],
+        "pv": [
+          "c2c3",
+          "d7d5",
+          "c4d5",
+          "c6e7",
+          "d2d3",
+          "b4a5"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "b1c3",
+        "san": "Nc3",
+        "quality": "excellent",
+        "sf_cp_white_after": 444,
+        "sf_mate": null,
+        "our_cp_white_after": 278,
+        "sf_delta_stm": -31,
+        "our_delta_stm": 24,
+        "wr_loss": 1.5,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "b1c3",
+          "b4c5",
+          "d2d3",
+          "d7d5",
+          "c4b3",
+          "c6d4"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "e1g1",
+        "san": "O-O",
+        "quality": "excellent",
+        "sf_cp_white_after": 439,
+        "sf_mate": null,
+        "our_cp_white_after": 303,
+        "sf_delta_stm": -36,
+        "our_delta_stm": 49,
+        "wr_loss": 1.75,
+        "motifs": [
+          {
+            "id": "castles_kingside",
+            "priority": 30,
+            "phrase": "Castles kingside"
+          }
+        ],
+        "pv": [
+          "e1g1",
+          "d7d5",
+          "c4d5",
+          "c6d4",
+          "c2c3",
+          "d4f3"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "h2h3",
+        "san": "h3",
+        "quality": "excellent",
+        "sf_cp_white_after": 423,
+        "sf_mate": null,
+        "our_cp_white_after": 276,
+        "sf_delta_stm": -52,
+        "our_delta_stm": 22,
+        "wr_loss": 2.58,
+        "motifs": [],
+        "pv": [
+          "h2h3",
+          "c6d4",
+          "c2c3",
+          "d7d5",
+          "c4d5",
+          "d4f3"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "a2a3",
+        "san": "a3",
+        "quality": "excellent",
+        "sf_cp_white_after": 411,
+        "sf_mate": null,
+        "our_cp_white_after": 271,
+        "sf_delta_stm": -64,
+        "our_delta_stm": 17,
+        "wr_loss": 3.23,
+        "motifs": [
+          {
+            "id": "threatens",
+            "priority": 26,
+            "phrase": "Threatens the bishop"
+          },
+          {
+            "id": "opens_diagonal_for",
+            "priority": 65,
+            "phrase": "Opens a diagonal for the bishop"
+          }
+        ],
+        "pv": [
+          "a2a3",
+          "b4c5",
+          "c4d5",
+          "c6d4",
+          "f3d4",
+          "c7c6"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 33,
+    "note": "King-and-pawn endgame, drawn-ish",
+    "kind": "endgame",
+    "fen": "8/5pk1/4p1p1/3pP1Pp/3P3P/3K4/8/8 w - - 0 1",
+    "stm": "w",
+    "sf_eval_white": 0,
+    "our_eval_white": -49,
+    "our_phase": 0,
+    "our_breakdown": {
+      "material": {
+        "mg": -82,
+        "eg": -94
+      },
+      "psqt": {
+        "mg": -75,
+        "eg": 42
+      },
+      "mobility": {
+        "mg": 0,
+        "eg": 0
+      },
+      "pawns": {
+        "mg": 9,
+        "eg": -4
+      },
+      "king_safety": {
+        "mg": 5,
+        "eg": 7
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Slight edge for Black",
+    "themes": [
+      "material_edge"
+    ],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "d3c3",
+        "san": "Kc3",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -59,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -10,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3c3",
+          "g7f8",
+          "c3b4",
+          "f8e7",
+          "b4c5",
+          "e7d7"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "d3d2",
+        "san": "Kd2",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -57,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -8,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3d2",
+          "g7g8",
+          "d2c3",
+          "g8f8",
+          "c3b4",
+          "f8e7"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "d3c2",
+        "san": "Kc2",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -66,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -17,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3c2",
+          "g7g8",
+          "c2b2",
+          "g8f8",
+          "b2c3",
+          "f8e7"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "d3e2",
+        "san": "Ke2",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -56,
+        "sf_delta_stm": 0,
+        "our_delta_stm": -7,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3e2",
+          "g7f8",
+          "e2d3",
+          "f8e7",
+          "d3c3",
+          "e7d7"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "d3e3",
+        "san": "Ke3",
+        "quality": "best",
+        "sf_cp_white_after": 0,
+        "sf_mate": null,
+        "our_cp_white_after": -47,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 2,
+        "wr_loss": 0,
+        "motifs": [],
+        "pv": [
+          "d3e3",
+          "g7f8",
+          "e3d3",
+          "f8e7",
+          "d3c3",
+          "e7d7"
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 34,
+    "note": "Italian: Bishop on c4 unblocked",
+    "kind": "opening",
+    "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR b KQkq - 2 3",
+    "stm": "b",
+    "sf_eval_white": -45,
+    "our_eval_white": -23,
+    "our_phase": 24,
+    "our_breakdown": {
+      "material": {
+        "mg": 0,
+        "eg": 0
+      },
+      "psqt": {
+        "mg": -8,
+        "eg": -21
+      },
+      "mobility": {
+        "mg": -15,
+        "eg": -28
+      },
+      "pawns": {
+        "mg": 0,
+        "eg": 0
+      },
+      "king_safety": {
+        "mg": 0,
+        "eg": 0
+      },
+      "threats": {
+        "mg": 0,
+        "eg": 0
+      },
+      "imbalance": {
+        "mg": 0,
+        "eg": 0
+      }
+    },
+    "verdict": "Roughly equal",
+    "themes": [],
+    "tactics_summary": "",
+    "moves": [
+      {
+        "rank": 1,
+        "uci": "g8f6",
+        "san": "Nf6",
+        "quality": "best",
+        "sf_cp_white_after": -45,
+        "sf_mate": null,
+        "our_cp_white_after": -65,
+        "sf_delta_stm": 0,
+        "our_delta_stm": 42,
+        "wr_loss": 0,
+        "motifs": [
+          {
+            "id": "attacks_pawn",
+            "priority": 70,
+            "phrase": "Threatens the e-pawn"
+          },
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "g8f6",
+          "d2d3",
+          "d7d5",
+          "e4d5",
+          "f6d5",
+          "g1f3"
+        ]
+      },
+      {
+        "rank": 2,
+        "uci": "c6a5",
+        "san": "Na5",
+        "quality": "excellent",
+        "sf_cp_white_after": -21,
+        "sf_mate": null,
+        "our_cp_white_after": -62,
+        "sf_delta_stm": -24,
+        "our_delta_stm": 39,
+        "wr_loss": 2.2,
+        "motifs": [
+          {
+            "id": "threatens",
+            "priority": 26,
+            "phrase": "Wins the bishop"
+          },
+          {
+            "id": "knight_on_rim",
+            "priority": 100,
+            "phrase": "Knight drifts to the rim"
+          }
+        ],
+        "pv": [
+          "c6a5",
+          "c4e2",
+          "g8f6",
+          "d2d3",
+          "d7d5",
+          "e4d5"
+        ]
+      },
+      {
+        "rank": 3,
+        "uci": "d8h4",
+        "san": "Qh4",
+        "quality": "excellent",
+        "sf_cp_white_after": -20,
+        "sf_mate": null,
+        "our_cp_white_after": -38,
+        "sf_delta_stm": -25,
+        "our_delta_stm": 15,
+        "wr_loss": 2.29,
+        "motifs": [
+          {
+            "id": "pin",
+            "priority": 7,
+            "phrase": "Pins the pawn to the bishop"
+          },
+          {
+            "id": "attacks_pawn",
+            "priority": 70,
+            "phrase": "Threatens the e-pawn"
+          }
+        ],
+        "pv": [
+          "d8h4",
+          "b1c3",
+          "f8c5",
+          "d1f3",
+          "g8f6",
+          "g1e2"
+        ]
+      },
+      {
+        "rank": 4,
+        "uci": "f8e7",
+        "san": "Be7",
+        "quality": "excellent",
+        "sf_cp_white_after": -20,
+        "sf_mate": null,
+        "our_cp_white_after": -20,
+        "sf_delta_stm": -25,
+        "our_delta_stm": -3,
+        "wr_loss": 2.29,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the bishop"
+          }
+        ],
+        "pv": [
+          "f8e7",
+          "d2d3",
+          "c6a5",
+          "b1d2",
+          "a5c4",
+          "d2c4"
+        ]
+      },
+      {
+        "rank": 5,
+        "uci": "g8e7",
+        "san": "Nge7",
+        "quality": "excellent",
+        "sf_cp_white_after": -3,
+        "sf_mate": null,
+        "our_cp_white_after": 7,
+        "sf_delta_stm": -42,
+        "our_delta_stm": -30,
+        "wr_loss": 3.86,
+        "motifs": [
+          {
+            "id": "develops",
+            "priority": 200,
+            "phrase": "Develops the knight"
+          }
+        ],
+        "pv": [
+          "g8e7",
+          "b1c3",
+          "c6a5",
+          "c4d3",
+          "d7d5",
+          "e4d5"
+        ]
+      }
+    ]
+  }
+]

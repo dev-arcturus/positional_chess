@@ -121,39 +121,6 @@ const RANDOM_POSITIONS_FALLBACK = [
   '6k1/5ppp/8/8/8/2Q5/5PPP/4R1K1 w - - 0 1',
 ];
 
-// Tone palette for move-character pills shown under each top move.
-// Restrained — different hues for different move types but all on the
-// same low-saturation level so the row doesn't become a christmas tree.
-function characterColor(label) {
-  switch (label) {
-    case 'Aggressive': return '#fca5a5'; // sharp red
-    case 'Combative':  return '#fdba74'; // amber
-    case 'Forcing':    return '#fde68a'; // yellow
-    case 'Risky':      return '#f9a8d4'; // pink
-    case 'Drawish':    return '#a1a1aa'; // grey
-    case 'Positional': return '#86efac'; // green
-    case 'Solid':      return '#7dd3fc'; // sky
-    case 'Quiet':      return '#71717a';
-    default:           return '#a1a1aa';
-  }
-}
-function characterBorder(label) {
-  // Same hue as the text colour but at lower alpha. Browsers don't
-  // give us alpha shorthand from a hex string, so just use rgba()
-  // from the same ramp.
-  switch (label) {
-    case 'Aggressive': return 'rgba(248,113,113,0.30)';
-    case 'Combative':  return 'rgba(253,186,116,0.30)';
-    case 'Forcing':    return 'rgba(253,224,71,0.30)';
-    case 'Risky':      return 'rgba(244,114,182,0.30)';
-    case 'Drawish':    return 'rgba(161,161,170,0.25)';
-    case 'Positional': return 'rgba(74,222,128,0.30)';
-    case 'Solid':      return 'rgba(125,211,252,0.30)';
-    case 'Quiet':      return 'rgba(82,82,91,0.30)';
-    default:           return 'rgba(161,161,170,0.25)';
-  }
-}
-
 // Fallback retained for safety; preferred path goes through the imported
 // `pickRandomPosition` from positions.js.
 function pickRandomPositionFallback() {
@@ -212,23 +179,28 @@ export default function Board() {
   const [posExplanation, setPosExplanation] = useState(null);
   const [prevPosExplanation, setPrevPosExplanation] = useState(null);
   React.useEffect(() => {
-    if (!wasmIsReady() || !fen) return;
+    if (!fen) return;
     let cancelled = false;
-    // Capture the current (about-to-become-previous) blob BEFORE we
-    // overwrite it with the new fen's blob. The lambda runs inside
-    // the same effect tick so React's batching keeps this consistent.
     setPrevPosExplanation(prev => posExplanation || prev);
-    const handle = setTimeout(() => {
+    // The WASM analyzer initialises asynchronously on first import. If
+    // the effect runs before init finishes, polling solves it without
+    // wiring an extra ready-state through React (which would have to
+    // be touched everywhere wasmIsReady is referenced).
+    let pollHandle;
+    const tryRun = () => {
       if (cancelled) return;
-      // Fast path.
+      if (!wasmIsReady()) {
+        pollHandle = setTimeout(tryRun, 50);
+        return;
+      }
       const staticE = explainPosition(fen);
       if (!cancelled && staticE) setPosExplanation(staticE);
-      // Slow path.
       buildFullExplanation(fen).then(full => {
         if (!cancelled && full) setPosExplanation(full);
       }).catch(() => { /* static is enough */ });
-    }, 0);
-    return () => { cancelled = true; clearTimeout(handle); };
+    };
+    tryRun();
+    return () => { cancelled = true; clearTimeout(pollHandle); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fen]);
 
@@ -1035,6 +1007,7 @@ export default function Board() {
     best:        '#4ade80',   // green-400
     excellent:   '#86efac',   // green-300
     good:        '#a7f3d0',   // emerald-200
+    book:        '#a8a29e',   // stone-400 (parchment-ish)
     neutral:     '#a1a1aa',   // zinc-400
     inaccuracy:  '#fbbf24',   // amber-400
     mistake:     '#fb923c',   // orange-400
@@ -1046,7 +1019,8 @@ export default function Board() {
     great:       '!',
     best:        '★',
     excellent:   '✓',
-    good:        '',
+    good:        '✓',
+    book:        '📖',
     neutral:     '',
     inaccuracy:  '?!',
     mistake:     '?',
@@ -1059,6 +1033,7 @@ export default function Board() {
     best:        'Best',
     excellent:   'Excellent',
     good:        'Good',
+    book:        'Book',
     neutral:     'Neutral',
     inaccuracy:  'Inaccuracy',
     mistake:     'Mistake',
@@ -1642,37 +1617,43 @@ export default function Board() {
                       .find(em => em.uci === move.move) || null;
                     return (
                       <>
-                        {/* Character pill + plan brief — calm,
-                            monochrome, restrained. Shows under the
-                            move's rank-row. */}
-                        {(enriched?.character || move.tagline) && (
+                        {/* Move-quality pill (Lichess-style icon) + plan brief.
+                            Replaces the older Aggressive/Combative/Positional
+                            character labels — quality is what the user can act on
+                            ("the engine likes my move") in a way that "tone" is not. */}
+                        {(enriched?.quality || move.tagline) && (
                           <div style={{
                             marginTop: '3px',
                             marginLeft: '26px',
                             display: 'flex',
-                            alignItems: 'baseline',
+                            alignItems: 'center',
                             gap: '6px',
                             flexWrap: 'wrap',
                             fontSize: '11px',
                             color: '#a1a1aa',
                             lineHeight: 1.35,
                           }}>
-                            {enriched?.character && enriched.character !== 'Quiet' && (
+                            {enriched?.quality && QUALITY_SYMBOL[enriched.quality] && (
                               <span
-                                title={enriched.character_reason || ''}
+                                title={getQualityLabel(enriched.quality)}
                                 style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
                                   fontSize: '9px',
                                   fontWeight: 700,
                                   letterSpacing: '0.06em',
                                   textTransform: 'uppercase',
-                                  color: characterColor(enriched.character),
+                                  color: getQualityColor(enriched.quality),
                                   padding: '1px 6px',
                                   borderRadius: '4px',
-                                  border: '1px solid ' + characterBorder(enriched.character),
+                                  border: '1px solid ' + getQualityColor(enriched.quality) + '55',
+                                  backgroundColor: getQualityColor(enriched.quality) + '14',
                                   whiteSpace: 'nowrap',
                                   flexShrink: 0,
                                 }}>
-                                {enriched.character}
+                                <QualityIcon quality={enriched.quality} size={11} />
+                                {getQualityLabel(enriched.quality)}
                               </span>
                             )}
                             {move.tagline && (
