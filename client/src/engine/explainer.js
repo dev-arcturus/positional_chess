@@ -103,12 +103,6 @@ function findKing(chess, color) {
   return null;
 }
 
-function squareDistance(sq1, sq2) {
-  const [f1, r1] = squareToFR(sq1);
-  const [f2, r2] = squareToFR(sq2);
-  return Math.max(Math.abs(f1 - f2), Math.abs(r1 - r2));
-}
-
 function iterateBoardSquares(chess, callback) {
   const board = chess.board();
   for (let r = 0; r < 8; r++) {
@@ -128,10 +122,6 @@ function iterateBoardSquares(chess, callback) {
 export function winRate(cpWhitePOV) {
   const clamped = Math.max(-1000, Math.min(1000, cpWhitePOV));
   return 100 / (1 + Math.exp(-0.00368208 * clamped));
-}
-
-function winRateFromMover(cpMoverPOV) {
-  return winRate(cpMoverPOV);
 }
 
 // Loss-based judgment ladder. `loss` is win-rate percentage-points lost
@@ -532,7 +522,20 @@ function classifyMove({
       return false;
     }
   })();
-  const onlyLegalMove = topMoves && topMoves.length === 1;
+  // Strict "is there literally only one legal move?" check via chess.js.
+  // Previously this used `topMoves.length === 1`, which is the engine's
+  // MultiPV reply count — semantically wrong (a position with 30 legal
+  // moves and MultiPV=1 would have a single-element topMoves but
+  // shouldn't be treated as forced).
+  const onlyLegalMove = (() => {
+    if (!fenBefore) return false;
+    try {
+      const c = new Chess(fenBefore);
+      return c.moves().length === 1;
+    } catch {
+      return false;
+    }
+  })();
 
   let quality;
   if (missedMate) {
