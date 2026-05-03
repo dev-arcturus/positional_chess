@@ -69,10 +69,21 @@ pub fn see(
         }
     }
 
-    // Negamax fold-back.
-    while depth > 0 {
+    // Negamax fold-back. The C-style standard `while (--d) gain[d-1] =
+    // -max(-gain[d-1], gain[d])` runs (depth - 1) iterations: it folds
+    // gain[d-1] using gain[d], walking down from the deepest capture to
+    // gain[0], but it does NOT do an extra fold on gain[0] itself.
+    //
+    // The previous Rust translation `while depth > 0 { depth -= 1; ... }`
+    // ran `depth` iterations instead — one too many. That extra iteration
+    // wrote a folded value into gain[0] using an already-folded gain[1],
+    // producing wrong-sign SEE results for defended-pawn cases. This is
+    // why "pawn defended by N pieces" was sometimes flagged as hanging.
+    //
+    // Correct form:  while depth > 1 { fold gain[d-1] using gain[d] }.
+    while depth > 1 {
         depth -= 1;
-        gain[depth] = -((-gain[depth]).max(gain[depth + 1]));
+        gain[depth - 1] = -((-gain[depth - 1]).max(gain[depth]));
     }
     gain[0]
 }

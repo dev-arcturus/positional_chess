@@ -268,6 +268,21 @@ function verdictText(cp) {
   return { side, text: 'is clearly winning' };
 }
 
+// Detect mate: either the principal_plan says so, or the eval_cp is in the
+// mate-encoded range Stockfish uses (close to ±32000). When there's a
+// forced mate on the board, every "open file" / "more mobility" fact is
+// noise — the mate is the position. Surface it; suppress the rest.
+function mateInN(explanation) {
+  // Engine-augmented blob carries explicit mate info.
+  const m = explanation?.principal_plan?.eval_mate;
+  if (m !== null && m !== undefined && m !== 0) return m;
+  // Static blob may have eval_cp at ±10000 ish if a terminal-state branch
+  // ran. Be conservative — only treat |cp| ≥ 9000 as effective mate.
+  const cp = explanation?.eval_cp ?? 0;
+  if (Math.abs(cp) >= 9000) return cp > 0 ? 1 : -1;
+  return null;
+}
+
 const FACT_COUNT_DEFAULT = 5;
 
 export default function AboutPosition({ explanation }) {
