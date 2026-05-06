@@ -39,6 +39,7 @@ This is the kind of analysis cockpit you'd find on Lichess, scaled down to a sin
 - **Pattern-recognising tagline composer** (JS). Named patterns subsume their components: when `greek_gift` fires, the tagline is "Greek gift sacrifice — Bxh7+!", not the bare `sacrifice + check`. When `decisive_combination` fires, it's the headline. Pair-join with `phrasesOverlap()` deduplicates two phrases that mention the same role / file-pawn / square.
 - **Two-tier validation suite** in `engine-rs/tests/`:
   - `motif_assertions.rs` (15 integration tests) — lock in specific false-positive guards: balanced trades don't fire `hangs`, single zone-square attacks don't fire `eyes_king_zone`, opening minor moves use `develops` not `activates`, simplifies fires when ahead, trades-into-endgame in low-phase positions; plus real tactical-pattern coverage for fork, absolute pin, skewer, discovered check, double check, knight invasion, and rook lift.
+  - `castling_rights.rs` (5 integration tests) — assert that the explanation blob's per-side `castling_rights_kingside` / `castling_rights_queenside` flags reflect the FEN's castling field after various losses (king moves, rook moves, post-castling).
   - `precision_recall.rs` — labelled-position corpus harness. Each entry is `(fen, uci, must_fire[], must_not_fire[], description)`. The harness walks the corpus, computes per-motif precision and recall, prints a table, and fails CI if precision drops below 0.80 or recall below 0.70 on any motif with ≥3 corpus mentions. **This is the LLM Council's #1 finding put into code:** every new master concept has to land with corpus entries before it ships, so the analyzer's outputs are measured rather than asserted.
 
 ### Explanation blob (LLM-ready)
@@ -120,6 +121,7 @@ This is the kind of analysis cockpit you'd find on Lichess, scaled down to a sin
 │   ├─ src/see.rs           (Static Exchange Evaluation)
 │   ├─ src/util.rs          (square / file / colour helpers)
 │   ├─ tests/motif_assertions.rs (15 integration tests, all asserting)
+│   ├─ tests/castling_rights.rs   (5 tests for KingSideAnalysis.castling_rights_*)
 │   ├─ tests/precision_recall.rs   (corpus harness, P/R thresholds)
 │   └─ build.sh             (wasm-pack + wasm-opt with bulk-memory +
 │                            nontrapping-float-to-int features)
@@ -146,7 +148,7 @@ Everything happens in the browser. The Stockfish Worker runs the search; the mai
 | Rust crates                  | `shakmaty` (chess rules), `wasm-bindgen` + `serde-wasm-bindgen` + `serde_json` (FFI), `serde` (struct serialisation) |
 | Icons                        | `lucide-react` for UI controls; **inline SVG** for chess pieces (`ChessPieceIcon.jsx`) and move-quality glyphs (`QualityIcon.jsx`) so they render consistently across font fallbacks |
 | Build pipeline (Rust → WASM) | `wasm-pack build --release --target web`, post-processed by `wasm-opt -O3` with bulk-memory + nontrapping-float-to-int features enabled (see `engine-rs/build.sh`) |
-| Tests                        | `cargo test --release` against `engine-rs/tests/` — 15 integration tests in `motif_assertions.rs` plus a precision/recall corpus harness in `precision_recall.rs` that gates per-motif accuracy. JS-side: `vitest` covers `chess.js` helpers, `explainer.js` (win-rate, SEE, classifier integration), `connectors.js`, `openings.js`, and `analysis.js` terminal-position branch — 53 tests across 5 files. |
+| Tests                        | `cargo test --release` against `engine-rs/tests/` — 15 motif-assertion tests + 5 castling-rights tests + a precision/recall corpus harness that gates per-motif accuracy. JS-side: `vitest` covers `chess.js` helpers, `explainer.js` (win-rate, SEE, classifier integration), `connectors.js`, `openings.js`, and `analysis.js` terminal-position branch — 53 tests across 5 files. |
 | Lint                         | ESLint 9 (flat config) for JS. `wasm-rs/` and `public/stockfish/` are ignored as auto-generated artefacts. |
 | CI                           | GitHub Actions (`.github/workflows/ci.yml`) runs `cargo test --release` for the Rust core and `npm ci && npm run lint && npm test && npm run build` for the client on every push and PR. |
 
@@ -217,6 +219,7 @@ What is **not** in the stack:
 │   │   └── util.rs                               # Square / file / colour helpers
 │   ├── tests/
 │   │   ├── motif_assertions.rs                   # 15 integration tests (all asserting)
+│   │   ├── castling_rights.rs                    # 5 tests: KingSideAnalysis castling_rights_*
 │   │   └── precision_recall.rs                   # corpus + P/R harness
 │   ├── build.sh                                  # wasm-pack + wasm-opt pipeline
 │   ├── Cargo.toml
@@ -309,32 +312,30 @@ The same pattern works on Netlify, Cloudflare Pages, GitHub Pages, S3+CloudFront
 
 ## Public API (`client/src/engine/`)
 
-`client/src/engine/analysis.js` is the orchestration layer the UI talks to. The shapes match what the (legacy) server endpoints used to return, so the rest of the app didn't have to change much.
+`client/src/engine/analysis.js` is the orchestration layer the UI talks to. Public API:
 
 ```js
 import {
   getTopMoves,
-  getBestMove,
   explainMoveAt,
 } from './engine/analysis';
 
-// Top N candidate moves for a position (1 ≤ N ≤ 10)
+// Top N candidate moves for a position (1 ≤ N ≤ 10).
+// Honours the user's depth + MultiPV from SettingsPanel via getEngineDefaults().
 const r = await getTopMoves(fen, 10);
-// → { fen, eval_cp, mate, moves: [{ rank, move, san, eval_cp, eval_pawns, pv, isMate, mateIn }, ...] }
-
-// Best move plus principal variation
-const r = await getBestMove(fen);
-// → { fen, bestMove, san, from, to, eval_cp, mate, pv: [san, ...] }
+// → { fen, eval_cp, mate, moves: [{ rank, move, san, eval_cp, eval_pawns, pv, isMate, mateIn, tagline, motifs, pvLine }, ...],
+//      gameOver, result }
 
 // Explain a move you just made
 const r = await explainMoveAt(fen, 'e2e4');
-// → { san, summary, details, quality, factors, motifs, evalBefore, evalAfter, evalDelta, winRateDelta, isTopMove }
+// → { san, summary, details, quality, factors, motifs, evalBefore, evalAfter,
+//      evalDelta, winRateLoss, isBestMove, isOnlyMove, bestMoveUCI, bestMoveSan }
 ```
 
-`quality` is one of: `brilliant | great | best | good | neutral | inaccuracy | mistake | blunder`.
-`motifs` is a subset of: `capture | check | checkmate | stalemate | fork | pin | discovered-check | removal-of-defender | sacrifice | castling-kingside | castling-queenside | en-passant | promotion | threefold-repetition | fifty-move-rule | insufficient-material`.
+`quality` is one of: `brilliant | great | best | excellent | good | neutral | inaccuracy | mistake | blunder | missed_mate`.
+`motifs` is a subset of: `capture | check | checkmate | stalemate | fork | pin | skewer | discovered-check | removal-of-defender | sacrifice | castling-kingside | castling-queenside | en-passant | promotion | threefold-repetition | fifty-move-rule | insufficient-material`.
 
-For lower-level access, `client/src/engine/engine.js` exposes `evaluate(fen, depth)`, `analyzeMultiPV(fen, n, depth)`, and `getBestMove(fen, depth)` directly on the Stockfish wrapper.
+For lower-level access, the default `engine` instance exported from `client/src/engine/engine.js` exposes `evaluate(fen, depth)`, `analyzeMultiPV(fen, n, depth)`, and `getBestMove(fen, depth)` directly on the Stockfish wrapper. (There used to be a top-level `getBestMove` export from `analysis.js` — it's gone; if you need that shape, call `engine.getBestMove(fen)` directly and translate as needed.)
 
 ---
 
@@ -736,7 +737,7 @@ A hand-crafted evaluator (HCE) with 7 heads, phased between middlegame and endga
 | `pawns`        | Islands, doubled, isolated, backward, supported, passed, holes   |
 | `king_safety`  | Pawn shield, attacker count + weight, open + half-open files     |
 | `threats`      | Lower-value attacker bonuses (knights threatening rooks, etc.)   |
-| `imbalance`    | Bishop-pair bonus, opposite-coloured-bishop adjustment, knight-vs-bishop fits |
+| `imbalance`    | Bishop-pair bonus. (Opposite-coloured-bishop adjustment and knight-vs-bishop fits are described in `analyse_material` for the explanation blob, but not yet wired into this HCE head — see Known Gaps.) |
 
 The evaluator is the source of truth for:
 - The eval bar (final cp, white-relative).
@@ -807,7 +808,7 @@ The WASM export `explain_position(fen)` returns a structured blob (Rust struct n
 - **Auto-promotion to queen.** The engine and explainer support under-promotion, but the UI never offers a knight/rook/bishop choice.
 - **Fixed 600 × 600 board.** No responsive layout, unusable on mobile.
 - **Tailwind is configured but barely used.** Either commit to Tailwind or drop the dev dependency.
-- **No accessibility pass.** Icon-only buttons have `title` attributes but no `aria-label`; the analysis panel has no `aria-live` announcements.
+- **Partial accessibility.** Toolbar icon buttons now have `aria-label`s, the settings gear has `aria-expanded`/`aria-haspopup`, the FEN input has `aria-invalid`/`role="alert"`, and the loading banner has `aria-live="polite"`. Still missing: `aria-live` regions for the top-moves list and the last-move card so analysis updates announce themselves.
 
 ### Chess-specific gaps
 - **No PGN import/export.**
@@ -815,8 +816,7 @@ The WASM export `explain_position(fen)` returns a structured blob (Rust struct n
 - **No play-vs-engine / multiplayer / persistence.** This is an analysis cockpit, not a game server.
 
 ### Engine quirks worth knowing
-- **`KingSideAnalysis.castling_rights_*`** in the `Explanation` blob is currently hard-coded `false`. Fixing it requires a small Rust change in `engine-rs/src/explanation.rs` plus a WASM rebuild (`engine-rs/build.sh`) — left for a follow-up PR so the change can ship its rebuilt artefact alongside the source change.
-- **`imbalance` head** in `eval.rs` currently scores only the bishop pair; the README-mentioned opposite-coloured-bishop and knight-vs-bishop adjustments aren't implemented yet.
+- **`imbalance` head** in `eval.rs` currently scores only the bishop pair. The opposite-coloured-bishop and knight-vs-bishop adjustments are computed inside `analyse_material` for the explanation blob, but they don't feed into the HCE eval that drives the eval bar. Wiring them in is a balance question (the bishop-pair bonus is already tuned; adding more terms means re-tuning), so it's intentionally separate.
 - **King-safety head** returns 0 when fewer than two enemy pieces attack the king zone. Intentional (cuts noise in quiet middlegames) but worth knowing if you're reading the per-head eval breakdown.
 
 ---
@@ -831,7 +831,8 @@ The WASM export `explain_position(fen)` returns a structured blob (Rust struct n
 - [x] Wire `SettingsPanel` so the depth + MultiPV sliders actually drive the analysis pipeline. *(done)*
 - [x] Add a CI workflow (cargo test + npm lint + test + build). *(done)*
 - [ ] Render the explainer's `motifs[]` array as chips on the move-explanation panel.
-- [ ] Add `aria-label` to icon-only buttons; `aria-live` on the analysis panel.
+- [x] Add `aria-label` to icon-only buttons (toolbar + settings gear). *(done)*
+- [ ] Add `aria-live` on the top-moves list and last-move card so analysis updates announce themselves.
 
 ### Medium-effort improvements
 - [ ] **Refactor `Board.jsx`** (~1.8K lines) into Toolbar / FenInput / TopMovesList / LastMoveCard subcomponents.
@@ -839,9 +840,9 @@ The WASM export `explain_position(fen)` returns a structured blob (Rust struct n
 - [ ] **Under-promotion modal.** Ask the user which piece on pawn promotion.
 - [ ] **PGN import/export.** Trivial with `chess.js`.
 - [ ] **Multi-threaded Stockfish.** Switch to `stockfish-18-lite.js` (multi-threaded build) and add COOP/COEP headers in `vercel.json` for ~2-4× search speedup.
-- [ ] **Loading UX.** Show a small "Loading engine…" indicator on first visit while the WASM downloads.
+- [x] **Loading UX.** First-visit "Loading engine…" banner in the analysis panel, deferred 300ms to avoid flashing on cached revisits. *(done)*
 - [ ] **Service worker / PWA install.** Cache the WASM offline-first; the app already works offline once loaded.
-- [ ] **Fix `castling_rights_*`** in `engine-rs/src/explanation.rs` — hard-coded `false` currently. Needs a WASM rebuild via `engine-rs/build.sh`.
+- [x] **Fix `castling_rights_*`** in `engine-rs/src/explanation.rs` — was hard-coded `false`; now wired through from `pos.castles()`. *(done)*
 
 ### Bigger directions
 - [ ] **Play-vs-engine mode.** Use Stockfish's `setoption name Skill Level` to dial difficulty; add a clock UI.
