@@ -71,3 +71,9 @@ body {
 .analysis-panel {
   background-color: #131316;
 }
+
+/* Generic spin animation used by the first-visit loading banner. */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

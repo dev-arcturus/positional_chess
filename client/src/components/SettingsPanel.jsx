@@ -40,6 +40,9 @@ export default function SettingsPanel({ onChange }) {
       <button
         onClick={() => setOpen(o => !o)}
         title="Engine settings (depth, multi-PV)"
+        aria-label="Open engine settings"
+        aria-expanded={open}
+        aria-haspopup="dialog"
         className="icon-btn"
         style={{
           padding: '7px',
