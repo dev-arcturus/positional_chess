@@ -265,7 +265,3 @@ export function pickRandomPosition() {
   const e = POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
   return e.fen;
 }
-
-export function pickRandomEntry() {
-  return POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
-}

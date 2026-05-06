@@ -557,7 +557,6 @@ function composeNarrative(blob) {
   return lines.join('\n\n');
 }
 
-export { composeNarrative };
 
 // ───────────────────────────────────────────────────────────────────────────
 // composePlanDescription — concrete prose from the principal-PV walk.
