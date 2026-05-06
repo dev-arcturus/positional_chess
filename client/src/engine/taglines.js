@@ -23,11 +23,6 @@ const PIECE_NAME  = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen'
 function frToSquare(f, r) { return String.fromCharCode(97 + f) + (r + 1); }
 function squareToFR(sq)   { return [sq.charCodeAt(0) - 97, parseInt(sq[1], 10) - 1]; }
 function fileLetter(idx)  { return String.fromCharCode(97 + idx); }
-function chebyshev(sq1, sq2) {
-  const [f1, r1] = squareToFR(sq1);
-  const [f2, r2] = squareToFR(sq2);
-  return Math.max(Math.abs(f1 - f2), Math.abs(r1 - r2));
-}
 function squareIsLight(sq) {
   const [f, r] = squareToFR(sq);
   return (f + r) % 2 === 1;
@@ -291,14 +286,6 @@ function centralControlOf(chess, fromSquare) {
   return { core, large };
 }
 
-// ── Mobility ────────────────────────────────────────────────────────────────
-function pieceMobility(chess, square) {
-  return chess.moves({ square, verbose: true }).length;
-}
-function totalMobility(chess) {
-  return chess.moves({ verbose: true }).length;
-}
-
 // ── Bishop diagnostics ──────────────────────────────────────────────────────
 function isBadBishop(chess, square, piece) {
   if (piece.type !== 'b') return false;
@@ -491,7 +478,7 @@ function detectSacrificeApprox(chessAfter, toSquare, movingPiece, capturedPiece)
 }
 
 // ── Activity (uses real mobility, not just PST) ─────────────────────────────
-function activityChange(chessBefore, chessAfter, fromSquare, toSquare, movingPiece) {
+function activityChange(chessBefore, chessAfter, fromSquare, toSquare, _movingPiece) {
   const before = squaresAttackedFrom(chessBefore, fromSquare).length;
   const after = squaresAttackedFrom(chessAfter, toSquare).length;
   return { before, after, delta: after - before };

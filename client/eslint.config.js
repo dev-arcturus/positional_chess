@@ -5,7 +5,12 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Build artefacts and auto-generated WASM glue — nothing to enforce there.
+  globalIgnores([
+    'dist',
+    'src/engine/wasm-rs/**',
+    'public/stockfish/**',
+  ]),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -23,7 +28,21 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // Allow unused args prefixed with underscore (callback signatures
+      // we accept but don't read) and uppercase / underscored vars
+      // (constants, mock placeholders).
+      'no-unused-vars': ['error', {
+        varsIgnorePattern: '^[A-Z_]',
+        argsIgnorePattern: '^_',
+      }],
+    },
+  },
+  // Vitest test files — relax rules that don't apply in tests (Node
+  // globals, free use of describe/it from vitest).
+  {
+    files: ['**/__tests__/**/*.{js,jsx}', '**/*.test.{js,jsx}'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
     },
   },
 ])

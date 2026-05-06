@@ -35,40 +35,6 @@ body {
 }
 .icon-btn:disabled { cursor: default; }
 
-/* Status / phase pill. Subtle border, monospace digit-friendly. */
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid #27272a;
-  background-color: #0e0e10;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.status-pill[data-tone="active"] {
-  border-color: #3f3f46;
-  background-color: #18181b;
-  color: #fafafa;
-}
-.status-pill[data-tone="muted"] { color: #71717a; }
-.status-pill[data-tone="up"]    { color: #86efac; border-color: rgba(74,222,128,.25); background-color: rgba(74,222,128,.08); }
-.status-pill[data-tone="down"]  { color: #fca5a5; border-color: rgba(248,113,113,.25); background-color: rgba(248,113,113,.08); }
-.status-pill[data-tone="hint"]  { color: #f97316; border-color: rgba(249,115,22,.35); background-color: rgba(249,115,22,.08); }
-.status-pill kbd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
-  padding: 0 4px;
-  border-radius: 3px;
-  background-color: #27272a;
-  border: 1px solid #3f3f46;
-  color: #d4d4d8;
-}
-
 /* Move-history token. Hover reveals a subtle background and pointer. */
 .history-token {
   padding: 2px 6px;

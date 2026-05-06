@@ -297,4 +297,10 @@ export function pieceValueAt(fen, square) {
 }
 
 // Kick off init eagerly so the first call has a good chance of being warm.
-ensureReady();
+// Skipped under Node-without-DOM (e.g. vitest unit tests) — `init()` from
+// wasm-bindgen relies on browser fetch + URL semantics that don't apply
+// there. Test code that needs WASM behaviour is expected to mock this
+// module at the test boundary.
+if (typeof window !== 'undefined') {
+  ensureReady();
+}
