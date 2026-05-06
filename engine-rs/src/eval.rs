@@ -46,7 +46,6 @@ impl Tapered {
 
     pub fn add_assign(&mut self, o: Tapered) { self.mg += o.mg; self.eg += o.eg; }
     pub fn sub_assign(&mut self, o: Tapered) { self.mg -= o.mg; self.eg -= o.eg; }
-    pub fn negate(self) -> Tapered { Tapered { mg: -self.mg, eg: -self.eg } }
 
     /// Phase-blend to a single centipawn score. `phase` runs 0..=24 with
     /// 24 = pure middlegame, 0 = pure endgame.

@@ -17,14 +17,15 @@
 //! Stockfish's blackbox is *attribution*: was the +0.7 because of
 //! material? Activity? King safety? This blob attributes explicitly.
 
-use crate::eval::{self, evaluate, EvalSide};
-use crate::see::{hanging_loss};
+use crate::eval::{evaluate, EvalSide};
+use crate::see::hanging_loss;
 use serde::{Deserialize, Serialize};
 use shakmaty::{
     attacks::{
         bishop_attacks, king_attacks, knight_attacks, pawn_attacks, queen_attacks, rook_attacks,
     },
-    Bitboard, Board, CastlingMode, Chess, Color, File, Piece, Position, Rank, Role, Square,
+    Bitboard, Board, CastlingMode, CastlingSide, Chess, Color, File, Piece, Position, Rank, Role,
+    Square,
 };
 
 // ── Top-level blob ──────────────────────────────────────────────────────
@@ -309,7 +310,7 @@ pub fn static_explanation(fen: &str) -> Result<Explanation, String> {
 
     let material = analyse_material(board);
     let pawn_structure = analyse_pawn_structure(board);
-    let king_safety = analyse_king_safety_both(board);
+    let king_safety = analyse_king_safety_both(&pos);
     let activity = analyse_activity_both(board);
     let line_control = analyse_line_control(board);
     let tactics = analyse_tactics(&pos);
@@ -695,9 +696,10 @@ fn file_letter_string(f: usize) -> String {
 
 // ── King safety ─────────────────────────────────────────────────────────
 
-fn analyse_king_safety_both(board: &Board) -> BothSidesKingSafety {
-    let white = analyse_king_side(board, Color::White);
-    let black = analyse_king_side(board, Color::Black);
+fn analyse_king_safety_both(pos: &Chess) -> BothSidesKingSafety {
+    let board = pos.board();
+    let white = analyse_king_side(pos, board, Color::White);
+    let black = analyse_king_side(pos, board, Color::Black);
     let summary = if white.danger_score > black.danger_score + 100 {
         format!("Black king safer (white danger {} vs black {})", white.danger_score, black.danger_score)
     } else if black.danger_score > white.danger_score + 100 {
@@ -708,13 +710,17 @@ fn analyse_king_safety_both(board: &Board) -> BothSidesKingSafety {
     BothSidesKingSafety { white, black, summary }
 }
 
-fn analyse_king_side(board: &Board, color: Color) -> KingSideAnalysis {
+fn analyse_king_side(pos: &Chess, board: &Board, color: Color) -> KingSideAnalysis {
+    let castles = pos.castles();
+    let castling_rights_kingside = castles.has(color, CastlingSide::KingSide);
+    let castling_rights_queenside = castles.has(color, CastlingSide::QueenSide);
+
     let king_sq = match board.king_of(color) {
         Some(s) => s,
         None => {
             return KingSideAnalysis {
                 king_square: "??".into(), castled: false,
-                castling_rights_kingside: false, castling_rights_queenside: false,
+                castling_rights_kingside, castling_rights_queenside,
                 pawn_shield_score: 0, attacker_count: 0, attackers: vec![],
                 open_files_to_king: vec![], half_open_files_to_king: vec![],
                 weak_diagonals_to_king: vec![], escape_squares_count: 0,
@@ -865,17 +871,11 @@ fn analyse_king_side(board: &Board, color: Color) -> KingSideAnalysis {
     danger_score += half_open.len() as i32 * 40;
     if escape_count == 0 { danger_score += 100; }
 
-    let cr = match color {
-        Color::White => (true, true),
-        Color::Black => (true, true),
-    };
-    let _ = cr; // currently we don't have direct access to castles in this scope
-
     KingSideAnalysis {
         king_square: king_sq.to_string(),
         castled,
-        castling_rights_kingside: false,  // filled via Chess::castles in JS layer if needed
-        castling_rights_queenside: false,
+        castling_rights_kingside,
+        castling_rights_queenside,
         pawn_shield_score: shield_score,
         attacker_count: attackers.len() as u32,
         attackers,
@@ -1383,17 +1383,17 @@ fn analyse_endgame(board: &Board, stm: Color, phase_str: &str) -> EndgameAnalysi
                 };
                 if let Some(dk) = defending_king {
                     let in_sq = defender_in_square(sq, color, dk, stm);
-                    let owner_cap = if color == Color::White { "White" } else { "Black" };
+                    let defender_cap = if color == Color::White { "Black" } else { "White" };
                     square_of_pawn.push(SquareOfPawnInfo {
                         pawn_color: if color == Color::White { "white".into() } else { "black".into() },
                         pawn_square: sq.to_string(),
                         defender_in_square: in_sq,
                         description: if in_sq {
                             format!("{}'s king is inside the square of the {} pawn — can catch it",
-                                    if color == Color::White { "Black" } else { "White" }, sq)
+                                    defender_cap, sq)
                         } else {
                             format!("The {} pawn races free — {} king can't catch it without help",
-                                    sq, if color == Color::White { "Black" } else { "White" })
+                                    sq, defender_cap)
                         },
                     });
                 }

@@ -48,6 +48,13 @@ pub fn detect_for_test(
     detect_all(before, after, mv, terminal)
 }
 
+/// Same access pattern: re-export the structured explanation builder for
+/// integration tests that want to assert against the LLM-ready blob.
+pub use explanation::Explanation as PublicExplanation;
+pub fn explain_for_test(fen: &str) -> Result<explanation::Explanation, String> {
+    explanation::static_explanation(fen)
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /// Result of analyzing a single move.
