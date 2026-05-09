@@ -351,4 +351,3 @@ class StockfishEngine {
 const engine = new StockfishEngine();
 
 export default engine;
-export { StockfishEngine, LRU };

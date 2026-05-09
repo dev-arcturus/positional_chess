@@ -1,7 +1,7 @@
 //! Small helpers shared across motif detectors: UCI parsing, SAN, role
 //! values, etc.
 
-use shakmaty::{san::SanPlus, Chess, Color, File, Move, Position, Rank, Role, Square};
+use shakmaty::{san::SanPlus, Chess, File, Move, Position, Role, Square};
 
 /// Centipawn material values. Knight=300, Bishop=320 — bishop slightly
 /// preferred per Stockfish midgame, but for "is this pin/skewer real?"
@@ -51,14 +51,6 @@ pub fn file_letter(f: File) -> char {
         File::F => 'f',
         File::G => 'g',
         File::H => 'h',
-    }
-}
-
-/// Square is in opponent's half (rank 5+ for white; rank 4- for black).
-pub fn in_enemy_half(sq: Square, mover: Color) -> bool {
-    match mover {
-        Color::White => sq.rank() >= Rank::Fifth,
-        Color::Black => sq.rank() <= Rank::Fourth,
     }
 }
 
@@ -126,12 +118,4 @@ fn parse_square(s: &str) -> Result<Square, String> {
 
 pub fn move_to_san(pos: &Chess, mv: &Move) -> String {
     SanPlus::from_move(pos.clone(), mv).to_string()
-}
-
-/// Pieces that move "forward" depend on color — small helper for pawn dirs.
-pub fn forward_rank_offset(c: Color) -> i32 {
-    match c {
-        Color::White => 1,
-        Color::Black => -1,
-    }
 }

@@ -17,9 +17,9 @@
 //! re-running `evaluate()` — about 100µs. 16 pieces × 100µs ≈ 1.6ms total
 //! per board, fast enough for instant heatmap updates on hover/drag.
 
-use crate::eval::{evaluate, Eval};
+use crate::eval::evaluate;
 use serde::{Deserialize, Serialize};
-use shakmaty::{Bitboard, Board, Color, Piece, Role, Square};
+use shakmaty::{Board, Color, Role, Square};
 
 #[derive(Serialize, Deserialize)]
 pub struct PieceContribution {

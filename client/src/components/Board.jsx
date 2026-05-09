@@ -10,7 +10,12 @@ import QualityIcon from './QualityIcon';
 import ChessPieceIcon from './ChessPieceIcon';
 import SettingsPanel from './SettingsPanel';
 import AboutPosition from './AboutPosition';
-import { explainPosition, isReady as wasmIsReady } from '../engine/analyzer-rs';
+import {
+  explainPosition,
+  isReady as wasmIsReady,
+  ensureReady as ensureWasmReady,
+} from '../engine/analyzer-rs';
+import engine from '../engine/engine';
 import { buildFullExplanation } from '../engine/full-explanation';
 import { pickRandomPosition } from '../engine/positions';
 import { topConsequenceLine } from '../engine/connectors';
@@ -114,6 +119,14 @@ export default function Board() {
   const [fenError, setFenError] = useState(null);
   const [orientation, setOrientation] = useState('white');
 
+  // Engine-load state. First-visit users download ~3MB (Stockfish + WASM)
+  // before any analysis can run. We track each piece independently so the
+  // banner can show "loading Stockfish" / "loading analyzer" / both.
+  const [stockfishReady, setStockfishReady] = useState(() => engine.ready);
+  const [wasmReady, setWasmReady] = useState(() => wasmIsReady());
+  // Suppress flicker — only show the banner if loading takes >300ms.
+  const [showLoadingBanner, setShowLoadingBanner] = useState(false);
+
   // Move history for back/forward
   const [moveHistory, setMoveHistory] = useState([{ fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', san: null }]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -137,6 +150,26 @@ export default function Board() {
   // Opening name (looked up by FEN over the entire history; once you're
   // out of book, the last-known opening sticks).
   const [openingName, setOpeningName] = useState(null);
+
+  // Subscribe to engine-load promises. Both kick off at module import
+  // time, so by the time we get here they may already be done (cached
+  // page revisits), in which case the .then handlers fire microtask-soon
+  // and the banner never renders. On a cold first visit they take
+  // anywhere from a few hundred ms to a couple of seconds.
+  useEffect(() => {
+    let cancelled = false;
+    engine.init()
+      .then(() => { if (!cancelled) setStockfishReady(true); })
+      .catch(() => { /* engine failed; let other UI surface the error */ });
+    ensureWasmReady()
+      .then((ok) => { if (!cancelled && ok) setWasmReady(true); })
+      .catch(() => { /* WASM failed; static fallback paths still work */ });
+    // Defer showing the banner so cached revisits never see it flash.
+    const t = setTimeout(() => { if (!cancelled) setShowLoadingBanner(true); }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, []);
+
+  const engineLoading = !stockfishReady || !wasmReady;
 
   // Comprehensive structured POSITION explanation blob.
   //
@@ -1184,6 +1217,51 @@ export default function Board() {
           borderRadius: '6px',
           overflow: 'hidden',
         }}>
+          {/* First-visit loading banner. Shown once both promises started
+              and one is still pending after the 300ms grace period.
+              Aggressive HTTP caching means returning visitors usually
+              skip this entirely. */}
+          {engineLoading && showLoadingBanner && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                padding: '8px 12px',
+                borderBottom: '1px solid #27272a',
+                backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                fontSize: '11px',
+                color: '#c7d2fe',
+                lineHeight: 1.45,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              {/* Animated spinner via CSS — pure-text, no extra deps. */}
+              <span
+                aria-hidden="true"
+                style={{
+                  display: 'inline-block',
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '50%',
+                  border: '2px solid #4338ca',
+                  borderTopColor: 'transparent',
+                  animation: 'spin 0.7s linear infinite',
+                  flexShrink: 0,
+                }}
+              />
+              <span>
+                {!stockfishReady && !wasmReady
+                  ? 'Loading engine and analyzer…'
+                  : !stockfishReady
+                  ? 'Loading Stockfish…'
+                  : 'Loading analyzer…'}
+                {' First visit downloads ~3 MB; cached afterwards.'}
+              </span>
+            </div>
+          )}
+
           {/* Toolbar buttons */}
           <div style={{
             display: 'flex',
@@ -1192,7 +1270,7 @@ export default function Board() {
             padding: '8px 10px',
             borderBottom: '1px solid #27272a',
           }}>
-            <button onClick={goBack} disabled={historyIndex === 0} title="Previous move (← / ↑)" className="icon-btn" style={{
+            <button onClick={goBack} disabled={historyIndex === 0} title="Previous move (← / ↑)" aria-label="Go to previous move" className="icon-btn" style={{
               padding: '7px',
               borderRadius: '6px',
               backgroundColor: '#1f1f23',
@@ -1203,7 +1281,7 @@ export default function Board() {
             }}>
               <ChevronLeft size={14} />
             </button>
-            <button onClick={goForward} disabled={historyIndex >= moveHistory.length - 1} title="Next move (→ / ↓)" className="icon-btn" style={{
+            <button onClick={goForward} disabled={historyIndex >= moveHistory.length - 1} title="Next move (→ / ↓)" aria-label="Go to next move" className="icon-btn" style={{
               padding: '7px',
               borderRadius: '6px',
               backgroundColor: '#1f1f23',
@@ -1215,7 +1293,7 @@ export default function Board() {
               <ChevronRight size={14} />
             </button>
             <div style={{ flex: 1 }} />
-            <button onClick={loadRandomPosition} title="Random plausible position" className="icon-btn" style={{
+            <button onClick={loadRandomPosition} title="Random plausible position" aria-label="Load a random plausible position" className="icon-btn" style={{
               padding: '7px',
               borderRadius: '6px',
               backgroundColor: '#1f1f23',
@@ -1226,7 +1304,7 @@ export default function Board() {
             }}>
               <Shuffle size={14} />
             </button>
-            <button onClick={flipBoard} title="Flip board (F)" className="icon-btn" style={{
+            <button onClick={flipBoard} title="Flip board (F)" aria-label="Flip board orientation" className="icon-btn" style={{
               padding: '7px',
               borderRadius: '6px',
               backgroundColor: '#1f1f23',
@@ -1237,7 +1315,7 @@ export default function Board() {
             }}>
               <RefreshCw size={14} />
             </button>
-            <button onClick={resetBoard} title="Reset to start position" className="icon-btn" style={{
+            <button onClick={resetBoard} title="Reset to start position" aria-label="Reset to starting position" className="icon-btn" style={{
               padding: '7px',
               borderRadius: '6px',
               backgroundColor: '#1f1f23',

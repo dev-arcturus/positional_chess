@@ -411,6 +411,7 @@ export default function AboutPosition({ explanation }) {
       {(remaining > 0 || plan?.description || explanation.summary_text) && (
         <button
           onClick={() => setExpanded(e => !e)}
+          aria-expanded={expanded}
           style={{
             display: 'flex',
             alignItems: 'center',

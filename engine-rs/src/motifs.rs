@@ -19,7 +19,7 @@
 use crate::eval::evaluate;
 use crate::see::{hanging_loss, least_valuable_attacker, see, see_capture};
 use crate::util::{
-    file_letter, in_enemy_half, king_zone, role_name, role_pin_value, role_value, square_is_light,
+    file_letter, king_zone, role_name, role_pin_value, role_value, square_is_light,
 };
 use serde::{Deserialize, Serialize};
 use shakmaty::{
@@ -63,10 +63,8 @@ struct Context<'a> {
     mover: Color,
     opp: Color,
     move_number: u32,
-    phase_qt: i32,                 // 0..=24
     phase: Phase,
     mover_advantage_cp: i32,       // before-move static eval, mover-POV
-    mover_advantage_after_cp: i32, // after-move static eval, mover-POV
     eval_swing_cp: i32,            // after − before, mover-POV
 }
 
@@ -118,10 +116,8 @@ pub fn detect_all(
         mover: moved.color,
         opp: moved.color.other(),
         move_number: before.fullmoves().get() as u32,
-        phase_qt,
         phase,
         mover_advantage_cp,
-        mover_advantage_after_cp,
         eval_swing_cp: mover_advantage_after_cp - mover_advantage_cp,
     };
 
